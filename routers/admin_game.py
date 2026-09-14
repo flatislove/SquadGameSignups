@@ -272,6 +272,7 @@ async def menu_manage_announcements(callback: types.CallbackQuery):
     for cid in published_active:
         g_title = groups.get(cid, {}).get("group_title", cid)
         kb.button(text=f"➕ Добавить игрока в: {g_title}", callback_data=f"admin_add_player_{cid}")
+        kb.button(text=f"🗑 Удалить игрока из: {g_title}", callback_data=f"admin_del_player_list_{cid}")
 
     kb.button(text="🔙 Назад в меню", callback_data="back_to_main_menu")
     kb.adjust(1)
@@ -281,6 +282,12 @@ async def menu_manage_announcements(callback: types.CallbackQuery):
         parse_mode="Markdown",
         reply_markup=kb.as_markup()
     )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "back_to_main_menu")
+async def process_back_to_main_menu(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("Главное меню:", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
 @router.callback_query(lambda c: c.data and c.data.startswith("stop_announcement_"))
@@ -321,28 +328,141 @@ async def admin_add_player_start(callback: types.CallbackQuery, state: FSMContex
     await callback.answer()
 
 @router.message(StateFilter("waiting_for_manual_player_name"))
-async def process_manual_player_input(message: types.Message, state: FSMContext):
+async def process_manual_player_name(message: types.Message, state: FSMContext):
+    player_name = message.text.strip()
+    await state.update_data(manual_player_name=player_name)
+    await state.set_state("waiting_for_manual_player_username")
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="➡️ Пропустить (без username)", callback_data="skip_manual_username")
+    kb.button(text="❌ Отмена", callback_data="menu_manage_announcements")
+    kb.adjust(1)
+
+    await message.answer(
+        f"Имя: *{escape_md(player_name)}*\n\nТеперь введите `@username` игрока (например, `@durov`), чтобы его имя стало кликабельным, либо нажмите кнопку пропуска:",
+        parse_mode="Markdown",
+        reply_markup=kb.as_markup()
+    )
+
+@router.callback_query(lambda c: c.data == "skip_manual_username", StateFilter("waiting_for_manual_player_username"))
+async def skip_manual_username(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     chat_id = data.get("manual_chat_id")
+    player_name = data.get("manual_player_name")
     await state.clear()
 
-    player_name = message.text.strip()
+    import time
+    manual_uid = f"manual_{int(time.time())}"
+    
     chat_data = get_chat_data(chat_id)
     players = chat_data.setdefault("players", {})
     reserve = chat_data.setdefault("reserve", {})
     max_players = int(chat_data.get("match_details", {}).get("max_players", 12))
 
-    import time
-    manual_uid = f"manual_{int(time.time())}"
-
     if len(players) < max_players:
-        players[manual_uid] = {"name": f"{player_name} (руч.)", "paid": False}
+        players[manual_uid] = {"name": player_name, "paid": False}
         msg_res = f"Игрок *{escape_md(player_name)}* добавлен вручную в основной состав."
     else:
-        reserve[manual_uid] = {"name": f"{player_name} (руч.)"}
+        reserve[manual_uid] = {"name": player_name, "paid": False}
         msg_res = f"Основной состав полон. Игрок *{escape_md(player_name)}* добавлен вручную в резерв."
 
     update_chat_data(chat_id, chat_data)
     await update_group_announcement(bot, chat_id)
 
+    await callback.message.edit_text(f"✅ {msg_res}")
+    await callback.message.answer("Главное меню:", reply_markup=get_main_menu_keyboard())
+    await callback.answer()
+
+@router.message(StateFilter("waiting_for_manual_player_username"))
+async def process_manual_player_username(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    chat_id = data.get("manual_chat_id")
+    player_name = data.get("manual_player_name")
+    await state.clear()
+
+    username = message.text.strip().lstrip("@")
+    manual_uid = f"username_{username}"
+
+    chat_data = get_chat_data(chat_id)
+    players = chat_data.setdefault("players", {})
+    reserve = chat_data.setdefault("reserve", {})
+    max_players = int(chat_data.get("match_details", {}).get("max_players", 12))
+
+    if len(players) < max_players:
+        players[manual_uid] = {"name": player_name, "paid": False}
+        msg_res = f"Игрок *{escape_md(player_name)}* (@{escape_md(username)}) добавлен вручную в основной состав."
+    else:
+        reserve[manual_uid] = {"name": player_name, "paid": False}
+        msg_res = f"Основной состав полон. Игрок *{escape_md(player_name)}* (@{escape_md(username)}) добавлен вручную в резерв."
+
+    update_chat_data(chat_id, chat_data)
+    await update_group_announcement(bot, chat_id)
+
     await message.answer(f"✅ {msg_res}", reply_markup=get_main_menu_keyboard())
+
+@router.callback_query(lambda c: c.data and c.data.startswith("admin_del_player_list_"))
+async def admin_del_player_list(callback: types.CallbackQuery):
+    chat_id = callback.data.split("_")[4]
+    chat_data = get_chat_data(chat_id)
+    players = chat_data.get("players", {})
+    reserve = chat_data.get("reserve", {})
+
+    if not players and not reserve:
+        await callback.answer("В матче нет участников.", show_alert=True)
+        return
+
+    kb = InlineKeyboardBuilder()
+    for uid, pdata in players.items():
+        kb.button(text=f"❌ [Осн] {pdata['name']}", callback_data=f"admindel_{chat_id}_p_{uid}")
+    for uid, rdata in reserve.items():
+        kb.button(text=f"❌ [Рез] {rdata['name']}", callback_data=f"admindel_{chat_id}_r_{uid}")
+
+    kb.button(text="🔙 Назад", callback_data="menu_manage_announcements")
+    kb.adjust(1)
+
+    await callback.message.edit_text(
+        "🗑 Выберите игрока для удаления из матча:",
+        reply_markup=kb.as_markup()
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data and c.data.startswith("admindel_"))
+async def admin_delete_player_action(callback: types.CallbackQuery):
+    parts = callback.data.split("_")
+    chat_id = parts[1]
+    p_type = parts[2] 
+    uid = "_".join(parts[3:]) 
+
+    chat_data = get_chat_data(chat_id)
+    players = chat_data.setdefault("players", {})
+    reserve = chat_data.setdefault("reserve", {})
+
+    target_dict = players if p_type == 'p' else reserve
+    if uid not in target_dict:
+        await callback.answer("Игрок не найден.", show_alert=True)
+        return
+
+    removed_player = target_dict.pop(uid)
+    is_paid = removed_player.get("paid", False)
+    p_name = removed_player.get("name", "Игрок")
+
+    if p_type == 'p' and reserve:
+        first_res_uid, first_res_data = next(iter(reserve.items()))
+        reserve.pop(first_res_uid)
+        players[first_res_uid] = first_res_data
+
+    update_chat_data(chat_id, chat_data)
+    await update_group_announcement(bot, chat_id)
+
+    if is_paid and str(uid).isdigit():
+        try:
+            await bot.send_message(
+                chat_id=callback.from_user.id,
+                text=f"⚠️ *Внимание!*\nВы удалили оплатившего игрока *{escape_md(p_name)}* из матча. Не забудьте вернуть ему деньги!"
+            )
+        except Exception:
+            pass
+
+    await callback.answer(f"Игрок {p_name} удален.", show_alert=True)
+    
+    await admin_del_player_list(callback)

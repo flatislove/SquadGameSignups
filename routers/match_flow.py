@@ -163,6 +163,91 @@ async def process_signup(callback: types.CallbackQuery):
         
     await callback.answer(status_text)
 
+@router.callback_query(lambda c: c.data == "admin_toggle_paid")
+async def admin_toggle_paid_menu(callback: types.CallbackQuery):
+    chat_id = str(callback.message.chat.id)
+    try:
+        member = await bot.get_chat_member(chat_id=int(chat_id), user_id=callback.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await callback.answer("Только администраторы могут изменять статус оплаты!", show_alert=True)
+            return
+    except Exception:
+        await callback.answer("Ошибка проверки прав.", show_alert=True)
+        return
+
+    chat_data = get_chat_data(chat_id)
+    players = chat_data.get("players", {})
+
+    if not players:
+        await callback.answer("В основном составе пока нет участников.", show_alert=True)
+        return
+
+    kb = InlineKeyboardBuilder()
+    for uid, pdata in players.items():
+        paid_status = "🟩 Оплачено" if pdata.get("paid", False) else "🟧 Не оплачено"
+        kb.button(text=f"{paid_status}: {pdata['name']}", callback_data=f"toggle_paid_{chat_id}_{uid}")
+
+    kb.button(text="🔙 Закрыть", callback_data="close_admin_paid_menu")
+    kb.adjust(1)
+
+    await callback.message.answer(
+        "💳 *Управление статусом оплаты участников:* (нажмите на игрока, чтобы переключить статус)",
+        parse_mode="Markdown",
+        reply_markup=kb.as_markup()
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data and c.data.startswith("toggle_paid_"))
+async def process_toggle_paid(callback: types.CallbackQuery):
+    parts = callback.data.split("_")
+    chat_id = parts[2]
+    uid = "_".join(parts[3:])
+
+    try:
+        member = await bot.get_chat_member(chat_id=int(chat_id), user_id=callback.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await callback.answer("Только администраторы могут изменять статус оплаты!", show_alert=True)
+            return
+    except Exception:
+        await callback.answer("Ошибка проверки прав.", show_alert=True)
+        return
+
+    chat_data = get_chat_data(chat_id)
+    players = chat_data.setdefault("players", {})
+
+    if uid not in players:
+        await callback.answer("Игрок не найден в основном составе.", show_alert=True)
+        return
+
+    current_paid = players[uid].get("paid", False)
+    players[uid]["paid"] = not current_paid
+
+    update_chat_data(chat_id, chat_data)
+    await update_group_announcement(bot, chat_id)
+
+    await callback.answer(f"Статус оплаты для {players[uid]['name']} изменен!")
+
+    kb = InlineKeyboardBuilder()
+    for p_uid, pdata in players.items():
+        paid_status = "🟩 Оплачено" if pdata.get("paid", False) else "🟧 Не оплачено"
+        kb.button(text=f"{paid_status}: {pdata['name']}", callback_data=f"toggle_paid_{chat_id}_{p_uid}")
+
+    kb.button(text="🔙 Закрыть", callback_data="close_admin_paid_menu")
+    kb.adjust(1)
+
+    try:
+        await callback.message.edit_reply_markup(reply_markup=kb.as_markup())
+    except Exception:
+        pass
+
+@router.callback_query(lambda c: c.data == "close_admin_paid_menu")
+async def close_admin_paid_menu(callback: types.CallbackQuery):
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.answer()
+
 @router.callback_query(lambda c: c.data and (c.data.startswith("transfer_yes_") or c.data.startswith("transfer_no_")))
 async def process_transfer_confirmation(callback: types.CallbackQuery):
     parts = callback.data.split("_")

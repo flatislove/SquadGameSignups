@@ -24,7 +24,12 @@ def build_announcement_text(chat_data: dict):
     for i, (uid, pdata) in enumerate(player_items):
         full_name = pdata["name"]
         safe_name = escape_md(full_name)
-        user_link = f"[{safe_name}](tg://user?id={uid})"
+        
+        if str(uid).startswith("manual_") or not str(uid).isdigit():
+            user_link = safe_name
+        else:
+            user_link = f"[{safe_name}](tg://user?id={uid})"
+            
         paid_mark = "🟩" if pdata.get("paid", False) else "🟧"
         players_lines.append(f"{paid_mark} {i+1}. {user_link}")
         
@@ -35,7 +40,12 @@ def build_announcement_text(chat_data: dict):
     for i, (uid, rdata) in enumerate(reserve_items):
         full_name = rdata["name"]
         safe_name = escape_md(full_name)
-        user_link = f"[{safe_name}](tg://user?id={uid})"
+        
+        if str(uid).startswith("manual_") or not str(uid).isdigit():
+            user_link = safe_name
+        else:
+            user_link = f"[{safe_name}](tg://user?id={uid})"
+            
         reserve_lines.append(f"🟦 {i+1}. {user_link}")
         
     reserve_section = ""

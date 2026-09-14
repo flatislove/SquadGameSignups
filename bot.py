@@ -17,7 +17,6 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
 
-# Ваш часовой пояс (UTC+5)
 LOCAL_TZ = timezone(timedelta(hours=5))
 
 bot = Bot(token=TOKEN)
@@ -63,7 +62,7 @@ def build_announcement_text(chat_data: dict):
     loc_display = f"[{details['loc_name']}]({details['loc_link']})" if details.get('loc_link') else details['loc_name']
     
     return (
-        f"🏐 *Match Announcement*\n\n"
+        f"🏐 *Волейбол*\n\n"
         f"📅 *Дата:* {details['date']}\n"
         f"⏰ *Время:* {details['time']}\n"
         f"📍 *Место:* {loc_display}\n"
@@ -168,11 +167,16 @@ async def process_pub_time(message: types.Message, state: FSMContext):
     }
     update_chat_data(chat_id, chat_data)
 
-    job_id = f"pub_match_{chat_id}_{int(pub_dt_utc.timestamp())}"
+    job_id = f"pub_match_{chat_id}"
+    
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+
     scheduler.add_job(
-        lambda: asyncio.create_task(send_custom_announcement(chat_id)),
+        send_custom_announcement,
         "date",
         run_date=pub_dt_utc,
+        args=[chat_id],
         id=job_id,
         replace_existing=True
     )
@@ -206,14 +210,9 @@ async def cmd_cancel_schedule(message: types.Message):
         await message.answer("No linked group found.")
         return
 
-    # Удаляем все запланированные задания для этого чата
-    removed = False
-    for job in scheduler.get_jobs():
-        if job.id.startswith(f"pub_match_{chat_id}"):
-            scheduler.remove_job(job.id)
-            removed = True
-
-    if removed:
+    job_id = f"pub_match_{chat_id}"
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
         await message.answer("Automated schedule has been cancelled.")
     else:
         await message.answer("No active schedule found.")

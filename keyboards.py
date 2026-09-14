@@ -4,6 +4,7 @@ def get_main_menu_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="📅 Создать игру", callback_data="menu_new_game")
     builder.button(text="💳 Управление оплатой", callback_data="menu_payments")
+    builder.button(text="📢 Управление анонсами", callback_data="menu_manage_announcements") # <--- Новая кнопка
     builder.adjust(1)
     return builder.as_markup()
 
@@ -26,6 +27,16 @@ def get_players_pay_keyboard(players, chat_id: str):
     for uid, pdata in players.items():
         paid_mark = "🟩" if pdata.get("paid", False) else "🟧"
         builder.button(text=f"{paid_mark} {pdata['name']}", callback_data=f"pm_pay_{chat_id}_{uid}")
+    builder.button(text="« Назад в меню", callback_data="menu_main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_scheduled_announcements_keyboard(jobs_list):
+    builder = InlineKeyboardBuilder()
+    for job in jobs_list:
+        chat_id = job.id.replace("pub_match_", "")
+        run_time = job.next_run_time.strftime("%d.%m.%Y %H:%M") if job.next_run_time else "скрыто"
+        builder.button(text=f"🛑 Остановить анонс ({run_time})", callback_data=f"stop_announcement_{chat_id}")
     builder.button(text="« Назад в меню", callback_data="menu_main")
     builder.adjust(1)
     return builder.as_markup()

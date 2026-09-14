@@ -104,9 +104,11 @@ async def process_signup(callback: types.CallbackQuery):
     else:
         if len(players) < max_players:
             was_paid = False
+            # Если игрок ранее отписался и висел в ожидании возврата — при повторной записи удаляем запрос на возврат у админа
             if user_id in refund_pending:
                 was_paid = True
                 del refund_pending[user_id]
+                
             players[user_id] = {"name": full_name, "paid": was_paid}
             status_text = "Вы успешно записались в основной состав!"
         else:

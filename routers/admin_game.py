@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from loader import bot, scheduler
 from states import NewGameForm
 from storage import load_data, save_data, get_chat_data, update_chat_data
-from keyboards import get_main_menu_keyboard, get_groups_keyboard, get_match_keyboard
+from keyboards import get_main_menu_keyboard, get_groups_keyboard, get_match_keyboard, get_scheduled_announcements_keyboard
 from utils import LOCAL_TZ, build_announcement_text, get_user_admin_groups
 
 router = Router()
@@ -174,3 +174,62 @@ async def process_pub_time(message: types.Message, state: FSMContext):
         parse_mode="Markdown",
         reply_markup=get_main_menu_keyboard()
     )
+
+@router.callback_query(lambda c: c.data == "menu_manage_announcements")
+async def menu_manage_announcements(callback: types.CallbackQuery):
+    admin_groups = await get_user_admin_groups(bot, callback.from_user.id)
+    if not admin_groups:
+        await callback.answer("У вас нет прав администратора ни в одной группе.", show_alert=True)
+        return
+
+    admin_chat_ids = [str(g[0]) for g in admin_groups]
+    
+    active_jobs = []
+    for job in scheduler.get_jobs():
+        if job.id.startswith("pub_match_"):
+            chat_id = job.id.replace("pub_match_", "")
+            if chat_id in admin_chat_ids:
+                active_jobs.append(job)
+
+    if not active_jobs:
+        await callback.message.edit_text(
+            "📭 В данный момент нет запланированных к публикации анонсов в ваших группах.",
+            reply_markup=get_main_menu_keyboard()
+        )
+        await callback.answer()
+        return
+
+    await callback.message.edit_text(
+        "📢 *Список запланированных анонсов:*\nВыберите анонс, публикацию которого хотите отменить:",
+        parse_mode="Markdown",
+        reply_markup=get_scheduled_announcements_keyboard(active_jobs)
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data and c.data.startswith("stop_announcement_"))
+async def process_stop_announcement(callback: types.CallbackQuery):
+    chat_id = callback.data.split("_")[2]
+    
+    job_id = f"pub_match_{chat_id}"
+    job = scheduler.get_job(job_id)
+    if job:
+        job.remove()
+
+    data = load_data()
+    groups = data.get("groups", {})
+    if chat_id in groups:
+        if "match_details" in groups[chat_id]:
+            del groups[chat_id]["match_details"]
+        if "active_match" in groups[chat_id]:
+            groups[chat_id]["active_match"] = False
+        if "players" in groups[chat_id]:
+            groups[chat_id]["players"] = {}
+        if "reserve" in groups[chat_id]:
+            groups[chat_id]["reserve"] = {}
+        save_data(data)
+
+    await callback.message.edit_text(
+        "🛑 Запланированная публикация анонса отменена.\nДанные очищены, бот больше не управляет этим матчем.",
+        reply_markup=get_main_menu_keyboard()
+    )
+    await callback.answer("Анонс отменен")

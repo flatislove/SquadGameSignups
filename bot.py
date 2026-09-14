@@ -26,8 +26,12 @@ scheduler = AsyncIOScheduler()
 class NewGameForm(StatesGroup):
     waiting_for_date = State()
     waiting_for_time = State()
-    waiting_for_location = State()
+    waiting_for_loc_name = State()
+    waiting_for_loc_link = State()
     waiting_for_cost = State()
+    waiting_for_phone = State()
+    waiting_for_name = State()
+    waiting_for_pub_time = State()
 
 def save_linked_chat(chat_id: str):
     data = load_data()
@@ -42,8 +46,11 @@ def build_announcement_text(chat_data: dict):
     details = chat_data.get("match_details", {
         "date": "TBD",
         "time": "TBD",
-        "location": "TBD",
-        "cost": "TBD"
+        "loc_name": "TBD",
+        "loc_link": "",
+        "cost": "0",
+        "phone": "TBD",
+        "name": "TBD"
     })
     
     players = chat_data.get("players", {})
@@ -51,13 +58,16 @@ def build_announcement_text(chat_data: dict):
     if not players_list_text:
         players_list_text = "No players yet."
         
+    loc_display = f"[{details['loc_name']}]({details['loc_link']})" if details.get('loc_link') else details['loc_name']
+    
     return (
-        f"🏐 **Match Announcement**\n\n"
-        f"📅 **Дата:** {details['date']}\n"
-        f"⏰ **Время:** {details['time']}\n"
-        f"📍 **Место:** {details['location']}\n"
-        f"💰 **Стоимость:** {details['cost']}\n\n"
-        f"**Registered players ({len(players)}):**\n{players_list_text}"
+        f"🏐 *Match Announcement*\n\n"
+        f"📅 *Дата:* {details['date']}\n"
+        f"⏰ *Время:* {details['time']}\n"
+        f"📍 *Место:* {loc_display}\n"
+        f"💰 *Стоимость:* {details['cost']} KZT\n"
+        f"💳 *Перевод:* `{details['phone']}` ({details['name']})\n\n"
+        f"*Registered players ({len(players)}):*\n{players_list_text}"
     )
 
 @dp.message(lambda message: message.chat.type in ["group", "supergroup"])
@@ -72,7 +82,8 @@ async def cmd_start(message: types.Message):
     else:
         linked = get_linked_chat()
         await message.answer(
-            f"Hello! I am **Squad Game Signups**.\nLinked group ID: `{linked}`"
+            f"Hello! I am *Squad Game Signups*.\nLinked group ID: `{linked}`",
+            parse_mode="Markdown"
         )
 
 @dp.message(Command("newgame"))
@@ -94,32 +105,77 @@ async def process_match_date(message: types.Message, state: FSMContext):
 @dp.message(NewGameForm.waiting_for_time)
 async def process_match_time(message: types.Message, state: FSMContext):
     await state.update_data(time=message.text)
-    await state.set_state(NewGameForm.waiting_for_location)
-    await message.answer("📍 Enter match location (e.g., Sports Hall #1):")
+    await state.set_state(NewGameForm.waiting_for_loc_name)
+    await message.answer("📍 Enter location name (e.g., Sports Hall #1):")
 
-@dp.message(NewGameForm.waiting_for_location)
-async def process_match_location(message: types.Message, state: FSMContext):
-    await state.update_data(location=message.text)
+@dp.message(NewGameForm.waiting_for_loc_name)
+async def process_match_loc_name(message: types.Message, state: FSMContext):
+    await state.update_data(loc_name=message.text)
+    await state.set_state(NewGameForm.waiting_for_loc_link)
+    await message.answer("🔗 Enter location URL/link (e.g., https://maps.app.goo.gl/...):")
+
+@dp.message(NewGameForm.waiting_for_loc_link)
+async def process_match_loc_link(message: types.Message, state: FSMContext):
+    await state.update_data(loc_link=message.text)
     await state.set_state(NewGameForm.waiting_for_cost)
-    await message.answer("💰 Enter match cost (e.g., 15 BYN):")
+    await message.answer("💰 Enter match cost in KZT (e.g., 2500):")
 
 @dp.message(NewGameForm.waiting_for_cost)
 async def process_match_cost(message: types.Message, state: FSMContext):
+    await state.update_data(cost=message.text)
+    await state.set_state(NewGameForm.waiting_for_phone)
+    await message.answer("📱 Enter phone number for payment transfer (e.g., +77011234567):")
+
+@dp.message(NewGameForm.waiting_for_phone)
+async def process_match_phone(message: types.Message, state: FSMContext):
+    await state.update_data(phone=message.text)
+    await state.set_state(NewGameForm.waiting_for_name)
+    await message.answer("👤 Enter recipient name (e.g., Vladislav V.):")
+
+@dp.message(NewGameForm.waiting_for_name)
+async def process_match_name(message: types.Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await state.set_state(NewGameForm.waiting_for_pub_time)
+    await message.answer("🚀 Enter publication time (format: DD.MM.YYYY HH:MM, e.g., 18.09.2026 12:00):")
+
+@dp.message(NewGameForm.waiting_for_pub_time)
+async def process_pub_time(message: types.Message, state: FSMContext):
+    pub_time_str = message.text
     form_data = await state.get_data()
-    cost = message.text
     await state.clear()
+
+    try:
+        pub_dt = datetime.strptime(pub_time_str.strip(), "%d.%m.%Y %H:%M")
+    except ValueError:
+        await message.answer("Invalid date format! Please use DD.MM.YYYY HH:MM. Run /newgame again.")
+        return
 
     chat_id = get_linked_chat()
     chat_data = get_chat_data(chat_id)
     
-    chat_data["active_match"] = True
-    chat_data["players"] = {}
     chat_data["match_details"] = {
         "date": form_data["date"],
         "time": form_data["time"],
-        "location": form_data["location"],
-        "cost": cost
+        "loc_name": form_data["loc_name"],
+        "loc_link": form_data["loc_link"],
+        "cost": form_data["cost"],
+        "phone": form_data["phone"],
+        "name": form_data["name"]
     }
+    update_chat_data(chat_id, chat_data)
+
+    scheduler.add_job(
+        lambda: asyncio.create_task(send_custom_announcement(chat_id)),
+        "date",
+        run_date=pub_dt
+    )
+
+    await message.answer(f"Match announcement successfully scheduled for {pub_time_str}!")
+
+async def send_custom_announcement(chat_id: str):
+    chat_data = get_chat_data(chat_id)
+    chat_data["active_match"] = True
+    chat_data["players"] = {}
     update_chat_data(chat_id, chat_data)
     
     builder = InlineKeyboardBuilder()
@@ -129,15 +185,12 @@ async def process_match_cost(message: types.Message, state: FSMContext):
         await bot.send_message(
             chat_id=int(chat_id),
             text=build_announcement_text(chat_data),
+            parse_mode="Markdown",
+            link_preview_options=types.LinkPreviewOptions(is_disabled=True),
             reply_markup=builder.as_markup()
         )
-        await message.answer("Match successfully created and published in the group!")
     except Exception as e:
-        await message.answer(f"Failed to send message to group: {e}")
-
-@dp.message(Command("set_schedule"))
-async def cmd_set_schedule(message: types.Message):
-    await message.answer("Scheduled automatic announcements use default or last configured details. Use /newgame in PM for custom interactive setup.")
+        logging.error(f"Failed to send scheduled announcement to {chat_id}: {e}")
 
 @dp.message(Command("cancel_schedule"))
 async def cmd_cancel_schedule(message: types.Message):
@@ -183,6 +236,8 @@ async def process_signup(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(
             text=build_announcement_text(chat_data),
+            parse_mode="Markdown",
+            link_preview_options=types.LinkPreviewOptions(is_disabled=True),
             reply_markup=builder.as_markup()
         )
     except Exception:

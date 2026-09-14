@@ -3,6 +3,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from states import NewGameForm
 from keyboards import (
@@ -24,33 +25,50 @@ def build_announcement_text(chat_data: dict):
     details = chat_data.get("match_details", {
         "date": "TBD", "time": "TBD", "end_time": "TBD",
         "loc_name": "TBD", "loc_link": "", "cost": "0",
-        "phone": "TBD", "name": "TBD"
+        "phone": "TBD", "name": "TBD", "max_players": 12
     })
     
+    max_p = int(details.get("max_players", 12))
     players = chat_data.get("players", {})
-    if players:
-        players_lines = []
-        for i, (uid, pdata) in enumerate(players.items()):
-            full_name = pdata["name"]
-            safe_name = escape_md(full_name)
-            user_link = f"[{safe_name}](tg://user?id={uid})"
-            paid_mark = "🟩" if pdata.get("paid", False) else "🟧"
-            players_lines.append(f"{i+1}. {user_link} — {paid_mark}")
-        players_list_text = "\n".join(players_lines)
-    else:
-        players_list_text = "_Пока нет участников._"
+    reserve = chat_data.get("reserve", {})
+    
+    players_lines = []
+    player_items = list(players.items())
+    for i, (uid, pdata) in enumerate(player_items):
+        full_name = pdata["name"]
+        safe_name = escape_md(full_name)
+        user_link = f"[{safe_name}](tg://user?id={uid})"
+        paid_mark = "🟩" if pdata.get("paid", False) else "🟧"
+        players_lines.append(f"{paid_mark} {i+1}. {user_link}")
         
+    players_list_text = "\n".join(players_lines) if players_lines else "_Пока нет участников._"
+        
+    reserve_lines = []
+    reserve_items = list(reserve.items())
+    for i, (uid, rdata) in enumerate(reserve_items):
+        full_name = rdata["name"]
+        safe_name = escape_md(full_name)
+        user_link = f"[{safe_name}](tg://user?id={uid})"
+        reserve_lines.append(f"🟦 {i+1}. {user_link}")
+        
+    reserve_section = ""
+    if reserve_lines:
+        reserve_section = f"\n\n*Резерв ({len(reserve)}):*\n" + "\n".join(reserve_lines)
+
     loc_display = f"[{details['loc_name']}]({details['loc_link']})" if details.get('loc_link') else details['loc_name']
     time_display = f"{details['time']} - {details['end_time']}" if details.get('end_time') else details['time']
     
+    total_count = len(players)
+    
     return (
-        f"🏐 *Волейбол*\n\n"
+        f"🏐 *Волейбол* (Основной состав: {total_count}/{max_p})\n\n"
         f"📅 *Дата:* {details['date']}\n"
         f"⏰ *Время:* {time_display}\n"
         f"📍 *Место:* {loc_display}\n"
         f"💰 *Стоимость:* {details['cost']} KZT\n"
-        f"💳 *Перевод:* {details['phone']} ({details['name']})\n\n"
-        f"*Участники ({len(players)}):*\n{players_list_text}"
+        f"💳 {details['phone']} ({details['name']})\n\n"
+        f"*Участники:*\n{players_list_text}"
+        f"{reserve_section}"
     )
 
 async def update_group_announcement(bot: Bot, chat_id: str):
@@ -206,6 +224,15 @@ def register_handlers(dp: Dispatcher, bot: Bot, scheduler: AsyncIOScheduler):
     @dp.message(NewGameForm.waiting_for_name)
     async def process_match_name(message: types.Message, state: FSMContext):
         await state.update_data(name=message.text)
+        await state.set_state(NewGameForm.waiting_for_max_players)
+        await message.answer("👥 Введите максимальное количество игроков в основном составе (например, 12):")
+
+    @dp.message(NewGameForm.waiting_for_max_players)
+    async def process_match_max_players(message: types.Message, state: FSMContext):
+        if not message.text.isdigit():
+            await message.answer("Пожалуйста, введите число (например, 12):")
+            return
+        await state.update_data(max_players=int(message.text))
         await state.set_state(NewGameForm.waiting_for_pub_time)
         await message.answer("🚀 Введите время публикации анонса (формат: ДД.ММ.ГГГГ ЧЧ:ММ, например, 18.09.2026 12:00):")
 
@@ -233,7 +260,8 @@ def register_handlers(dp: Dispatcher, bot: Bot, scheduler: AsyncIOScheduler):
             "date": form_data["date"], "time": form_data["time"],
             "end_time": form_data["end_time"], "loc_name": form_data["loc_name"],
             "loc_link": form_data["loc_link"], "cost": form_data["cost"],
-            "phone": form_data["phone"], "name": form_data["name"]
+            "phone": form_data["phone"], "name": form_data["name"],
+            "max_players": form_data["max_players"]
         }
         save_data(data)
 
@@ -260,6 +288,9 @@ def register_handlers(dp: Dispatcher, bot: Bot, scheduler: AsyncIOScheduler):
         chat_data = get_chat_data(chat_id)
         chat_data["active_match"] = True
         chat_data["players"] = {}
+        chat_data["reserve"] = {}
+        chat_data["refund_pending"] = {}
+        chat_data["paid_spot_transfers"] = {}
         update_chat_data(chat_id, chat_data)
         
         try:
@@ -317,7 +348,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, scheduler: AsyncIOScheduler):
 
         players = chat_data.get("players", {})
         if not players:
-            text = "Список участников в этой группе пуст."
+            text = "Основной список участников в этой группе пуст."
             if is_callback:
                 await callback_or_message.message.edit_text(text, reply_markup=get_main_menu_keyboard())
             else:
@@ -375,21 +406,103 @@ def register_handlers(dp: Dispatcher, bot: Bot, scheduler: AsyncIOScheduler):
         full_name = user.full_name
         
         chat_data = get_chat_data(chat_id)
-        
         if not chat_data.get("active_match"):
             await callback.answer("В данный момент нет активного матча!", show_alert=True)
             return
         
         players = chat_data.setdefault("players", {})
+        reserve = chat_data.setdefault("reserve", {})
+        refund_pending = chat_data.setdefault("refund_pending", {})
+        paid_spot_transfers = chat_data.setdefault("paid_spot_transfers", {})
+        
+        max_players = int(chat_data.get("match_details", {}).get("max_players", 12))
         
         if user_id in players:
-            del players[user_id]
-            status_text = "Вы выписаны из списка участников."
+            pdata = players[user_id]
+            if pdata.get("paid", False):
+                if reserve:
+                    next_reserve_uid, next_reserve_data = next(iter(reserve.items()))
+                    
+                    paid_spot_transfers[user_id] = {
+                        "leaving_user_name": full_name,
+                        "receiver_uid": next_reserve_uid,
+                        "receiver_name": next_reserve_data["name"],
+                        "pdata": pdata
+                    }
+                    
+                    del players[user_id]
+                    del reserve[next_reserve_uid]
+                    
+                    update_chat_data(chat_id, chat_data)
+                    await update_group_announcement(bot, chat_id)
+                    
+                    try:
+                        kb = InlineKeyboardBuilder()
+                        kb.button(text="✅ Да, деньги переведены", callback_data=f"transfer_yes_{chat_id}_{user_id}_{next_reserve_uid}")
+                        kb.button(text="❌ Нет", callback_data=f"transfer_no_{chat_id}_{user_id}_{next_reserve_uid}")
+                        kb.adjust(1)
+                        
+                        await bot.send_message(
+                            chat_id=int(user_id),
+                            text=f"🔄 Игрок *{escape_md(next_reserve_data['name'])}* из резерва занял ваше место в группе *{escape_md(chat_data.get('group_title'))}*.\n\nПеревел ли он вам деньги за вашу оплату (`🟩`)?",
+                            parse_mode="Markdown",
+                            reply_markup=kb.as_markup()
+                        )
+                    except Exception as e:
+                        print(f"Failed to send transfer request to user: {e}")
+                    
+                    status_text = "Вы выписаны. Бот уточняет у вас в ЛС насчет перевода денег."
+                else:
+                    refund_pending[user_id] = pdata
+                    del players[user_id]
+                    update_chat_data(chat_id, chat_data)
+                    
+                    group_title = chat_data.get("group_title", f"Группа {chat_id}")
+                    try:
+                        chat_admins = await bot.get_chat_administrators(int(chat_id))
+                        for admin in chat_admins:
+                            if admin.user.is_bot:
+                                continue
+                            kb = InlineKeyboardBuilder()
+                            kb.button(text="✅ Подтвердить возврат", callback_data=f"refund_ok_{chat_id}_{user_id}")
+                            kb.adjust(1)
+                            
+                            await bot.send_message(
+                                chat_id=admin.user.id,
+                                text=f"⚠️ *Внимание!* Игрок *{escape_md(full_name)}* отменил запись в группе *{escape_md(group_title)}*, но у него стояла отметка об оплате 🟩.\nНеобходимо вернуть деньги!",
+                                parse_mode="Markdown",
+                                reply_markup=kb.as_markup()
+                            )
+                    except Exception as e:
+                        print(f"Failed to notify admins about refund: {e}")
+
+                    status_text = "Вы выписаны. Администратор уведомлен о возврате оплаты."
+            else:
+                del players[user_id]
+                if reserve:
+                    r_uid, r_data = next(iter(reserve.items()))
+                    del reserve[r_uid]
+                    players[r_uid] = {"name": r_data["name"], "paid": False}
+                update_chat_data(chat_id, chat_data)
+                status_text = "Вы выписаны из списка участников."
+
+        elif user_id in reserve:
+            del reserve[user_id]
+            update_chat_data(chat_id, chat_data)
+            status_text = "Вы удалены из резерва."
+
         else:
-            players[user_id] = {"name": full_name, "paid": False}
-            status_text = "Вы успешно записались!"
-            
-        update_chat_data(chat_id, chat_data)
+            if len(players) < max_players:
+                was_paid = False
+                if user_id in refund_pending:
+                    was_paid = True
+                    del refund_pending[user_id]
+                players[user_id] = {"name": full_name, "paid": was_paid}
+                status_text = "Вы успешно записались в основной состав!"
+            else:
+                reserve[user_id] = {"name": full_name}
+                status_text = "Мест нет, вы добавлены в Резерв!"
+            update_chat_data(chat_id, chat_data)
         
         try:
             await callback.message.edit_text(
@@ -402,3 +515,93 @@ def register_handlers(dp: Dispatcher, bot: Bot, scheduler: AsyncIOScheduler):
             print(f"Failed to update message on signup: {e}")
             
         await callback.answer(status_text)
+
+    @dp.callback_query(lambda c: c.data and (c.data.startswith("transfer_yes_") or c.data.startswith("transfer_no_")))
+    async def process_transfer_confirmation(callback: types.CallbackQuery):
+        parts = callback.data.split("_")
+        action = parts[1]
+        chat_id = parts[2]
+        leaving_uid = parts[3]
+        receiver_uid = parts[4]
+
+        chat_data = get_chat_data(chat_id)
+        players = chat_data.setdefault("players", {})
+        reserve = chat_data.setdefault("reserve", {})
+        refund_pending = chat_data.setdefault("refund_pending", {})
+        paid_spot_transfers = chat_data.setdefault("paid_spot_transfers", {})
+
+        transfer_info = paid_spot_transfers.get(leaving_uid)
+        if not transfer_info:
+            await callback.message.edit_text("ℹ️ Информация об этом переводе уже устарела или обработана.")
+            await callback.answer()
+            return
+
+        receiver_name = transfer_info["receiver_name"]
+        pdata = transfer_info["pdata"]
+
+        if action == "yes":
+            players[receiver_uid] = {"name": receiver_name, "paid": True}
+            del paid_spot_transfers[leaving_uid]
+            update_chat_data(chat_id, chat_data)
+            await update_group_announcement(bot, chat_id)
+            
+            await callback.message.edit_text(f"✅ Спасибо! Место передано игроку *{escape_md(receiver_name)}* со статусом оплаты (🟩).", parse_mode="Markdown")
+        else:
+            del paid_spot_transfers[leaving_uid]
+            refund_pending[leaving_uid] = pdata
+            
+            new_reserve = {receiver_uid: {"name": receiver_name}}
+            new_reserve.update(reserve)
+            chat_data["reserve"] = new_reserve
+            update_chat_data(chat_id, chat_data)
+            await update_group_announcement(bot, chat_id)
+
+            group_title = chat_data.get("group_title", f"Группа {chat_id}")
+            try:
+                chat_admins = await bot.get_chat_administrators(int(chat_id))
+                for admin in chat_admins:
+                    if admin.user.is_bot:
+                        continue
+                    kb = InlineKeyboardBuilder()
+                    kb.button(text="✅ Подтвердить возврат", callback_data=f"refund_ok_{chat_id}_{leaving_uid}")
+                    kb.adjust(1)
+                    
+                    await bot.send_message(
+                        chat_id=admin.user.id,
+                        text=f"⚠️ *Внимание!* Игрок отменил запись и сообщил, что перевод от резервиста *не* поступил. Требуется вернуть деньги игроку *{escape_md(transfer_info['leaving_user_name'])}* в группе *{escape_md(group_title)}*!",
+                        parse_mode="Markdown",
+                        reply_markup=kb.as_markup()
+                    )
+            except Exception as e:
+                print(f"Failed to notify admins about failed transfer refund: {e}")
+
+            await callback.message.edit_text("❌ Вы указали, что перевод не поступил. Администратор уведомлен о необходимости возврата.")
+
+        await callback.answer()
+
+    @dp.callback_query(lambda c: c.data and c.data.startswith("refund_ok_"))
+    async def process_refund_confirmation(callback: types.CallbackQuery):
+        parts = callback.data.split("_")
+        chat_id = parts[2]
+        target_uid = parts[3]
+
+        try:
+            member = await bot.get_chat_member(chat_id=int(chat_id), user_id=callback.from_user.id)
+            if member.status not in ["creator", "administrator"]:
+                await callback.answer("Только администраторы могут подтверждать возврат!", show_alert=True)
+                return
+        except Exception:
+            await callback.answer("Ошибка проверки прав.", show_alert=True)
+            return
+
+        chat_data = get_chat_data(chat_id)
+        refund_pending = chat_data.setdefault("refund_pending", {})
+        
+        if target_uid in refund_pending:
+            del refund_pending[target_uid]
+            update_chat_data(chat_id, chat_data)
+            await callback.message.edit_text(f"✅ Возврат для игрока подтвержден. Статус сброшен.")
+        else:
+            await callback.message.edit_text(f"ℹ️ Возврат по этому игроку уже был обработан ранее.")
+            
+        await callback.answer("Возврат подтвержден")

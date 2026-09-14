@@ -1,10 +1,13 @@
 import asyncio
 import logging
 import os
+from datetime import datetime, timedelta
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from storage import get_chat_data, update_chat_data
 
@@ -15,6 +18,33 @@ PORT = int(os.getenv("PORT", 8080))
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+scheduler = AsyncIOScheduler()
+
+async def is_admin(chat_id: int, user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+        return member.status in ["creator", "administrator"]
+    except Exception:
+        return False
+
+async def send_scheduled_game(chat_id: str):
+    chat_data = get_chat_data(chat_id)
+    chat_data["active_match"] = True
+    chat_data["players"] = {}
+    update_chat_data(chat_id, chat_data)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📝 Sign Up", callback_data="signup")
+    
+    try:
+        await bot.send_message(
+            chat_id=int(chat_id),
+            text="🏐 **Automated Match Announcement!**\nClick the button below to secure your spot.",
+            reply_markup=builder.as_markup()
+        )
+    except Exception as e:
+        logging.error(f"Failed to send scheduled message to {chat_id}: {e}")
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
@@ -23,6 +53,11 @@ async def cmd_start(message: types.Message):
 
 @dp.message(Command("newgame"))
 async def cmd_newgame(message: types.Message):
+    if message.chat.type in ["group", "supergroup"]:
+        if not await is_admin(message.chat.id, message.from_user.id):
+            await message.answer("Only group administrators can use this command.")
+            return
+
     chat_id = str(message.chat.id)
     chat_data = get_chat_data(chat_id)
     
@@ -37,6 +72,45 @@ async def cmd_newgame(message: types.Message):
         "🏐 **New Match Announced!**\nClick the button below to secure your spot.",
         reply_markup=builder.as_markup()
     )
+
+@dp.message(Command("set_schedule"))
+async def cmd_set_schedule(message: types.Message):
+    if message.chat.type in ["group", "supergroup"]:
+        if not await is_admin(message.chat.id, message.from_user.id):
+            await message.answer("Only group administrators can use this command.")
+            return
+
+    chat_id = str(message.chat.id)
+    
+    job_id = f"game_match_{chat_id}"
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+
+    scheduler.add_job(
+        send_scheduled_game,
+        CronTrigger(day_of_week="tue,thu", hour=10, minute=0),
+        id=job_id,
+        args=[chat_id],
+        replace_existing=True
+    )
+    
+    await message.answer("Schedule successfully set! Automated matches will be announced every Tuesday and Thursday at 10:00 AM.")
+
+@dp.message(Command("cancel_schedule"))
+async def cmd_cancel_schedule(message: types.Message):
+    if message.chat.type in ["group", "supergroup"]:
+        if not await is_admin(message.chat.id, message.from_user.id):
+            await message.answer("Only group administrators can use this command.")
+            return
+
+    chat_id = str(message.chat.id)
+    job_id = f"game_match_{chat_id}"
+    
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+        await message.answer("Automated schedule has been cancelled.")
+    else:
+        await message.answer("No active schedule found for this chat.")
 
 @dp.callback_query(lambda c: c.data == "signup")
 async def process_signup(callback: types.CallbackQuery):
@@ -67,7 +141,7 @@ async def process_signup(callback: types.CallbackQuery):
         players_list_text = "No players yet."
         
     text = (
-        f"🏐 **New Match Announced!**\n\n"
+        f"🏐 **Match Announcement**\n\n"
         f"**Registered players ({len(players)}):**\n{players_list_text}"
     )
     
@@ -97,7 +171,9 @@ async def web_server():
 
 async def main():
     logging.basicConfig(level=logging.INFO)
-    print("Starting bot...")
+    print("Starting bot and scheduler...")
+    
+    scheduler.start()
     
     await asyncio.gather(
         web_server(),

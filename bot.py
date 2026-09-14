@@ -35,15 +35,6 @@ class NewGameForm(StatesGroup):
     waiting_for_name = State()
     waiting_for_pub_time = State()
 
-def save_linked_chat(chat_id: str):
-    data = load_data()
-    data["linked_chat_id"] = chat_id
-    save_data(data)
-
-def get_linked_chat():
-    data = load_data()
-    return data.get("linked_chat_id")
-
 def escape_md(text: str) -> str:
     for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
         text = text.replace(char, f'\\{char}')
@@ -65,56 +56,150 @@ def build_announcement_text(chat_data: dict):
     if players:
         players_lines = []
         for i, (uid, pdata) in enumerate(players.items()):
-            name = escape_md(pdata["name"])
+            full_name = pdata["name"]
+            safe_name = escape_md(full_name)
+            user_link = f"[{safe_name}](tg://user?id={uid})"
             paid_mark = "🟩" if pdata.get("paid", False) else "🟧"
-            players_lines.append(f"{i+1}. @{name} — {paid_mark}")
-        players_list_text = "```\n" + "\n".join(players_lines) + "\n```"
+            players_lines.append(f"{i+1}. {user_link} — {paid_mark}")
+        players_list_text = "\n".join(players_lines)
     else:
-        players_list_text = "_No players yet._"
+        players_list_text = "_Пока нет участников._"
         
     loc_display = f"[{details['loc_name']}]({details['loc_link']})" if details.get('loc_link') else details['loc_name']
     time_display = f"{details['time']} - {details['end_time']}" if details.get('end_time') else details['time']
     
     return (
-        f"🏐 *Match Announcement*\n\n"
-        f"📅 *Дата:* `{details['date']}`\n"
-        f"⏰ *Время:* `{time_display}`\n"
+        f"🏐 *Волейбол*\n\n"
+        f"📅 *Дата:* {details['date']}\n"
+        f"⏰ *Время:* {time_display}\n"
         f"📍 *Место:* {loc_display}\n"
         f"💰 *Стоимость:* {details['cost']} KZT\n"
-        f"💳 *Перевод:* `{details['phone']}` ({details['name']})\n\n"
-        f"*Registered players ({len(players)}):*\n{players_list_text}"
+        f"💳 *Перевод:* {details['phone']} ({details['name']})\n\n"
+        f"*Участники ({len(players)}):*\n{players_list_text}"
     )
 
 def get_match_keyboard():
     builder = InlineKeyboardBuilder()
-    builder.button(text="📝 Sign Up / Leave", callback_data="signup")
-    builder.button(text="💳 Toggle Paid Status", callback_data="toggle_pay")
+    builder.button(text="📝 Записаться", callback_data="signup")
     builder.adjust(1)
     return builder.as_markup()
 
-@dp.message(lambda message: message.chat.type in ["group", "supergroup"])
-async def group_activity_handler(message: types.Message):
-    save_linked_chat(str(message.chat.id))
+async def update_group_announcement(chat_id: str):
+    chat_data = get_chat_data(chat_id)
+    msg_id = chat_data.get("announcement_message_id")
+    if not msg_id:
+        return
+    try:
+        await bot.edit_message_text(
+            chat_id=int(chat_id),
+            message_id=int(msg_id),
+            text=build_announcement_text(chat_data),
+            parse_mode="Markdown",
+            link_preview_options=types.LinkPreviewOptions(is_disabled=True),
+            reply_markup=get_match_keyboard()
+        )
+    except Exception as e:
+        logging.error(f"Failed to update group announcement: {e}")
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     if message.chat.type in ["group", "supergroup"]:
-        save_linked_chat(str(message.chat.id))
-        await message.answer("Group successfully linked!")
+        await message.answer("Бот успешно подключен к этой группе!")
     else:
-        linked = get_linked_chat()
         await message.answer(
-            f"Hello! I am *Squad Game Signups*.\nLinked group ID: `{linked}`",
+            "Привет! Отправь команду /payments в личных сообщениях, чтобы управлять оплатой участников.",
             parse_mode="Markdown"
         )
 
-@dp.message(Command("newgame"))
-async def cmd_newgame(message: types.Message, state: FSMContext):
-    chat_id = get_linked_chat()
-    if not chat_id:
-        await message.answer("No linked group found. Please send any message in your Telegram group first.")
+@dp.message(Command("payments"))
+async def cmd_payments(message: types.Message, state: FSMContext):
+    if message.chat.type != "private":
+        await message.answer("Эту команду нужно использовать в личных сообщениях с ботом.")
         return
 
+    data = load_data()
+    groups = data.get("groups", {})
+    
+    admin_groups = []
+    for chat_id, chat_data in groups.items():
+        if chat_data.get("active_match"):
+            try:
+                member = await bot.get_chat_member(chat_id=int(chat_id), user_id=message.from_user.id)
+                if member.status in ["creator", "administrator"]:
+                    group_title = chat_data.get("group_title", f"Группа {chat_id}")
+                    admin_groups.append((chat_id, group_title))
+            except Exception:
+                continue
+
+    if not admin_groups:
+        await message.answer("У вас нет активных матчей в группах, где вы являетесь администратором.")
+        return
+
+    if len(admin_groups) == 1:
+        await show_group_players_for_pay(message, admin_groups[0][0])
+    else:
+        builder = InlineKeyboardBuilder()
+        for chat_id, title in admin_groups:
+            builder.button(text=title, callback_data=f"sel_group_{chat_id}")
+        builder.adjust(1)
+        await message.answer("Выберите группу для управления оплатой:", reply_markup=builder.as_markup())
+
+async def show_group_players_for_pay(message_or_callback, chat_id: str):
+    chat_data = get_chat_data(chat_id)
+    players = chat_data.get("players", {})
+    if not players:
+        text = "Список участников в этой группе пуст."
+        if isinstance(message_or_callback, types.CallbackQuery):
+            await message_or_callback.message.answer(text)
+            await message_or_callback.answer()
+        else:
+            await message_or_callback.answer(text)
+        return
+
+    builder = InlineKeyboardBuilder()
+    for uid, pdata in players.items():
+        paid_mark = "🟩" if pdata.get("paid", False) else "🟧"
+        builder.button(text=f"{paid_mark} {pdata['name']}", callback_data=f"pm_pay_{chat_id}_{uid}")
+    builder.adjust(1)
+
+    text = f"Управление оплатой для группы *{chat_data.get('group_title', chat_id)}*:"
+    if isinstance(message_or_callback, types.CallbackQuery):
+        await message_or_callback.message.edit_text(text, parse_mode="Markdown", reply_markup=builder.as_markup())
+        await message_or_callback.answer()
+    else:
+        await message_or_callback.answer(text, parse_mode="Markdown", reply_markup=builder.as_markup())
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("sel_group_"))
+async def process_select_group(callback: types.CallbackQuery):
+    chat_id = callback.data.split("_")[2]
+    try:
+        member = await bot.get_chat_member(chat_id=int(chat_id), user_id=callback.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await callback.answer("Только администраторы могут изменять статус оплаты!", show_alert=True)
+            return
+    except Exception:
+        await callback.answer("Ошибка проверки прав.", show_alert=True)
+        return
+
+    await show_group_players_for_pay(callback, chat_id)
+
+@dp.message(Command("newgame"))
+async def cmd_newgame(message: types.Message, state: FSMContext):
+    if message.chat.type not in ["group", "supergroup"]:
+        await message.answer("Команду /newgame нужно использовать внутри группы.")
+        return
+
+    chat_id = str(message.chat.id)
+    try:
+        member = await bot.get_chat_member(chat_id=int(chat_id), user_id=message.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await message.answer("Создавать игру могут только администраторы группы.")
+            return
+    except Exception:
+        await message.answer("Не удалось проверить права администратора.")
+        return
+
+    await state.update_data(target_chat_id=chat_id, group_title=message.chat.title)
     await state.set_state(NewGameForm.waiting_for_date)
     await message.answer("📅 Enter match date (e.g., 20.09.2026):")
 
@@ -180,9 +265,13 @@ async def process_pub_time(message: types.Message, state: FSMContext):
         await message.answer("Invalid date format! Please use DD.MM.YYYY HH:MM. Run /newgame again.")
         return
 
-    chat_id = get_linked_chat()
-    chat_data = get_chat_data(chat_id)
+    chat_id = form_data["target_chat_id"]
     
+    data = load_data()
+    groups = data.setdefault("groups", {})
+    chat_data = groups.setdefault(chat_id, {})
+    
+    chat_data["group_title"] = form_data["group_title"]
     chat_data["match_details"] = {
         "date": form_data["date"],
         "time": form_data["time"],
@@ -193,7 +282,7 @@ async def process_pub_time(message: types.Message, state: FSMContext):
         "phone": form_data["phone"],
         "name": form_data["name"]
     }
-    update_chat_data(chat_id, chat_data)
+    save_data(data)
 
     job_id = f"pub_match_{chat_id}"
     if scheduler.get_job(job_id):
@@ -217,22 +306,23 @@ async def send_custom_announcement(chat_id: str):
     update_chat_data(chat_id, chat_data)
     
     try:
-        await bot.send_message(
+        sent_msg = await bot.send_message(
             chat_id=int(chat_id),
             text=build_announcement_text(chat_data),
             parse_mode="Markdown",
             link_preview_options=types.LinkPreviewOptions(is_disabled=True),
             reply_markup=get_match_keyboard()
         )
+        chat_data["announcement_message_id"] = str(sent_msg.message_id)
+        update_chat_data(chat_id, chat_data)
     except Exception as e:
         logging.error(f"Failed to send scheduled announcement to {chat_id}: {e}")
 
 @dp.message(Command("cancel_schedule"))
 async def cmd_cancel_schedule(message: types.Message):
-    chat_id = get_linked_chat()
-    if not chat_id:
-        await message.answer("No linked group found.")
+    if message.chat.type not in ["group", "supergroup"]:
         return
+    chat_id = str(message.chat.id)
 
     job_id = f"pub_match_{chat_id}"
     if scheduler.get_job(job_id):
@@ -246,7 +336,7 @@ async def process_signup(callback: types.CallbackQuery):
     chat_id = str(callback.message.chat.id)
     user = callback.from_user
     user_id = str(user.id)
-    username = user.username or user.first_name
+    full_name = user.full_name
     
     chat_data = get_chat_data(chat_id)
     
@@ -258,10 +348,10 @@ async def process_signup(callback: types.CallbackQuery):
     
     if user_id in players:
         del players[user_id]
-        status_text = "You have been removed from the list."
+        status_text = "Вы выписаны из списка участников."
     else:
-        players[user_id] = {"name": username, "paid": False}
-        status_text = "Successfully registered!"
+        players[user_id] = {"name": full_name, "paid": False}
+        status_text = "Вы успешно записались!"
         
     update_chat_data(chat_id, chat_data)
     
@@ -277,38 +367,44 @@ async def process_signup(callback: types.CallbackQuery):
         
     await callback.answer(status_text)
 
-@dp.callback_query(lambda c: c.data == "toggle_pay")
-async def process_toggle_pay(callback: types.CallbackQuery):
-    chat_id = str(callback.message.chat.id)
-    user_id = str(callback.from_user.id)
-    
-    chat_data = get_chat_data(chat_id)
-    if not chat_data.get("active_match"):
-        await callback.answer("No active match at the moment!", show_alert=True)
-        return
-        
-    players = chat_data.get("players", {})
-    if user_id not in players:
-        await callback.answer("You are not registered in the match list!", show_alert=True)
-        return
-        
-    current_status = players[user_id].get("paid", False)
-    players[user_id]["paid"] = not current_status
-    
-    update_chat_data(chat_id, chat_data)
-    
+@dp.callback_query(lambda c: c.data and c.data.startswith("pm_pay_"))
+async def process_pm_pay_selection(callback: types.CallbackQuery):
+    parts = callback.data.split("_")
+    chat_id = parts[2]
+    target_uid = parts[3]
+
     try:
-        await callback.message.edit_text(
-            text=build_announcement_text(chat_data),
-            parse_mode="Markdown",
-            link_preview_options=types.LinkPreviewOptions(is_disabled=True),
-            reply_markup=get_match_keyboard()
-        )
-    except Exception as e:
-        logging.error(f"Failed to update message on toggle pay: {e}")
-        
-    new_status_str = "Paid (🟩)" if players[user_id]["paid"] else "Unpaid (🟧)"
-    await callback.answer(f"Status updated: {new_status_str}")
+        member = await bot.get_chat_member(chat_id=int(chat_id), user_id=callback.from_user.id)
+        if member.status not in ["creator", "administrator"]:
+            await callback.answer("Только администраторы могут изменять статус оплаты!", show_alert=True)
+            return
+    except Exception:
+        await callback.answer("Ошибка проверки прав.", show_alert=True)
+        return
+
+    chat_data = get_chat_data(chat_id)
+    players = chat_data.get("players", {})
+    
+    if target_uid in players:
+        current_status = players[target_uid].get("paid", False)
+        players[target_uid]["paid"] = not current_status
+        update_chat_data(chat_id, chat_data)
+
+        await update_group_announcement(chat_id)
+
+        players_sub = chat_data.get("players", {})
+        builder = InlineKeyboardBuilder()
+        for uid, pdata in players_sub.items():
+            paid_mark = "🟩" if pdata.get("paid", False) else "🟧"
+            builder.button(text=f"{paid_mark} {pdata['name']}", callback_data=f"pm_pay_{chat_id}_{uid}")
+        builder.adjust(1)
+
+        try:
+            await callback.message.edit_reply_markup(reply_markup=builder.as_markup())
+        except Exception:
+            pass
+            
+    await callback.answer("Статус обновлен")
 
 async def handle_ping(request):
     return web.Response(text="Bot is running!")

@@ -27,6 +27,7 @@ scheduler = AsyncIOScheduler()
 class NewGameForm(StatesGroup):
     waiting_for_date = State()
     waiting_for_time = State()
+    waiting_for_end_time = State()
     waiting_for_loc_name = State()
     waiting_for_loc_link = State()
     waiting_for_cost = State()
@@ -43,10 +44,16 @@ def get_linked_chat():
     data = load_data()
     return data.get("linked_chat_id")
 
+def escape_md(text: str) -> str:
+    for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+        text = text.replace(char, f'\\{char}')
+    return text
+
 def build_announcement_text(chat_data: dict):
     details = chat_data.get("match_details", {
         "date": "TBD",
         "time": "TBD",
+        "end_time": "TBD",
         "loc_name": "TBD",
         "loc_link": "",
         "cost": "0",
@@ -55,21 +62,35 @@ def build_announcement_text(chat_data: dict):
     })
     
     players = chat_data.get("players", {})
-    players_list_text = "\n".join([f"{i+1}. @{name}" for i, (_, name) in enumerate(players.items())])
-    if not players_list_text:
-        players_list_text = "No players yet."
+    if players:
+        players_lines = []
+        for i, (uid, pdata) in enumerate(players.items()):
+            name = escape_md(pdata["name"])
+            paid_mark = "🟩" if pdata.get("paid", False) else "🟧"
+            players_lines.append(f"{i+1}. @{name} — {paid_mark}")
+        players_list_text = "```\n" + "\n".join(players_lines) + "\n```"
+    else:
+        players_list_text = "_No players yet._"
         
     loc_display = f"[{details['loc_name']}]({details['loc_link']})" if details.get('loc_link') else details['loc_name']
+    time_display = f"{details['time']} - {details['end_time']}" if details.get('end_time') else details['time']
     
     return (
-        f"🏐 *Волейбол*\n\n"
-        f"📅 *Дата:* {details['date']}\n"
-        f"⏰ *Время:* {details['time']}\n"
+        f"🏐 *Match Announcement*\n\n"
+        f"📅 *Дата:* `{details['date']}`\n"
+        f"⏰ *Время:* `{time_display}`\n"
         f"📍 *Место:* {loc_display}\n"
         f"💰 *Стоимость:* {details['cost']} KZT\n"
         f"💳 *Перевод:* `{details['phone']}` ({details['name']})\n\n"
         f"*Registered players ({len(players)}):*\n{players_list_text}"
     )
+
+def get_match_keyboard():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📝 Sign Up / Leave", callback_data="signup")
+    builder.button(text="💳 Toggle Paid Status", callback_data="toggle_pay")
+    builder.adjust(1)
+    return builder.as_markup()
 
 @dp.message(lambda message: message.chat.type in ["group", "supergroup"])
 async def group_activity_handler(message: types.Message):
@@ -101,11 +122,17 @@ async def cmd_newgame(message: types.Message, state: FSMContext):
 async def process_match_date(message: types.Message, state: FSMContext):
     await state.update_data(date=message.text)
     await state.set_state(NewGameForm.waiting_for_time)
-    await message.answer("⏰ Enter match time (e.g., 19:00):")
+    await message.answer("⏰ Enter match start time (e.g., 19:00):")
 
 @dp.message(NewGameForm.waiting_for_time)
 async def process_match_time(message: types.Message, state: FSMContext):
     await state.update_data(time=message.text)
+    await state.set_state(NewGameForm.waiting_for_end_time)
+    await message.answer("🏁 Enter match end time (e.g., 21:00):")
+
+@dp.message(NewGameForm.waiting_for_end_time)
+async def process_match_end_time(message: types.Message, state: FSMContext):
+    await state.update_data(end_time=message.text)
     await state.set_state(NewGameForm.waiting_for_loc_name)
     await message.answer("📍 Enter location name (e.g., Sports Hall #1):")
 
@@ -159,6 +186,7 @@ async def process_pub_time(message: types.Message, state: FSMContext):
     chat_data["match_details"] = {
         "date": form_data["date"],
         "time": form_data["time"],
+        "end_time": form_data["end_time"],
         "loc_name": form_data["loc_name"],
         "loc_link": form_data["loc_link"],
         "cost": form_data["cost"],
@@ -168,7 +196,6 @@ async def process_pub_time(message: types.Message, state: FSMContext):
     update_chat_data(chat_id, chat_data)
 
     job_id = f"pub_match_{chat_id}"
-    
     if scheduler.get_job(job_id):
         scheduler.remove_job(job_id)
 
@@ -189,16 +216,13 @@ async def send_custom_announcement(chat_id: str):
     chat_data["players"] = {}
     update_chat_data(chat_id, chat_data)
     
-    builder = InlineKeyboardBuilder()
-    builder.button(text="📝 Sign Up", callback_data="signup")
-    
     try:
         await bot.send_message(
             chat_id=int(chat_id),
             text=build_announcement_text(chat_data),
             parse_mode="Markdown",
             link_preview_options=types.LinkPreviewOptions(is_disabled=True),
-            reply_markup=builder.as_markup()
+            reply_markup=get_match_keyboard()
         )
     except Exception as e:
         logging.error(f"Failed to send scheduled announcement to {chat_id}: {e}")
@@ -236,25 +260,55 @@ async def process_signup(callback: types.CallbackQuery):
         del players[user_id]
         status_text = "You have been removed from the list."
     else:
-        players[user_id] = username
+        players[user_id] = {"name": username, "paid": False}
         status_text = "Successfully registered!"
         
     update_chat_data(chat_id, chat_data)
-    
-    builder = InlineKeyboardBuilder()
-    builder.button(text="📝 Sign Up", callback_data="signup")
     
     try:
         await callback.message.edit_text(
             text=build_announcement_text(chat_data),
             parse_mode="Markdown",
             link_preview_options=types.LinkPreviewOptions(is_disabled=True),
-            reply_markup=builder.as_markup()
+            reply_markup=get_match_keyboard()
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error(f"Failed to update message on signup: {e}")
         
     await callback.answer(status_text)
+
+@dp.callback_query(lambda c: c.data == "toggle_pay")
+async def process_toggle_pay(callback: types.CallbackQuery):
+    chat_id = str(callback.message.chat.id)
+    user_id = str(callback.from_user.id)
+    
+    chat_data = get_chat_data(chat_id)
+    if not chat_data.get("active_match"):
+        await callback.answer("No active match at the moment!", show_alert=True)
+        return
+        
+    players = chat_data.get("players", {})
+    if user_id not in players:
+        await callback.answer("You are not registered in the match list!", show_alert=True)
+        return
+        
+    current_status = players[user_id].get("paid", False)
+    players[user_id]["paid"] = not current_status
+    
+    update_chat_data(chat_id, chat_data)
+    
+    try:
+        await callback.message.edit_text(
+            text=build_announcement_text(chat_data),
+            parse_mode="Markdown",
+            link_preview_options=types.LinkPreviewOptions(is_disabled=True),
+            reply_markup=get_match_keyboard()
+        )
+    except Exception as e:
+        logging.error(f"Failed to update message on toggle pay: {e}")
+        
+    new_status_str = "Paid (🟩)" if players[user_id]["paid"] else "Unpaid (🟧)"
+    await callback.answer(f"Status updated: {new_status_str}")
 
 async def handle_ping(request):
     return web.Response(text="Bot is running!")

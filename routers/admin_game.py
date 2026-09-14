@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from aiogram import Router, types
 from aiogram.fsm.context import FSMContext
+from aiogram.filters import StateFilter
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from loader import bot, scheduler
@@ -319,7 +320,7 @@ async def admin_add_player_start(callback: types.CallbackQuery, state: FSMContex
     )
     await callback.answer()
 
-@router.message(lambda msg: True, state="waiting_for_manual_player_name")
+@router.message(StateFilter("waiting_for_manual_player_name"))
 async def process_manual_player_input(message: types.Message, state: FSMContext):
     data = await state.get_data()
     chat_id = data.get("manual_chat_id")

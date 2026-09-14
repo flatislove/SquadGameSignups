@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -10,13 +10,15 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from storage import get_chat_data, update_chat_data, load_data, save_data
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
+
+# Ваш часовой пояс (UTC+5)
+LOCAL_TZ = timezone(timedelta(hours=5))
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -145,7 +147,9 @@ async def process_pub_time(message: types.Message, state: FSMContext):
     await state.clear()
 
     try:
-        pub_dt = datetime.strptime(pub_time_str.strip(), "%d.%m.%Y %H:%M")
+        pub_dt_local = datetime.strptime(pub_time_str.strip(), "%d.%m.%Y %H:%M")
+        pub_dt_local = pub_dt_local.replace(tzinfo=LOCAL_TZ)
+        pub_dt_utc = pub_dt_local.astimezone(timezone.utc)
     except ValueError:
         await message.answer("Invalid date format! Please use DD.MM.YYYY HH:MM. Run /newgame again.")
         return
@@ -164,10 +168,13 @@ async def process_pub_time(message: types.Message, state: FSMContext):
     }
     update_chat_data(chat_id, chat_data)
 
+    job_id = f"pub_match_{chat_id}_{int(pub_dt_utc.timestamp())}"
     scheduler.add_job(
         lambda: asyncio.create_task(send_custom_announcement(chat_id)),
         "date",
-        run_date=pub_dt
+        run_date=pub_dt_utc,
+        id=job_id,
+        replace_existing=True
     )
 
     await message.answer(f"Match announcement successfully scheduled for {pub_time_str}!")
@@ -199,9 +206,14 @@ async def cmd_cancel_schedule(message: types.Message):
         await message.answer("No linked group found.")
         return
 
-    job_id = f"game_match_{chat_id}"
-    if scheduler.get_job(job_id):
-        scheduler.remove_job(job_id)
+    # Удаляем все запланированные задания для этого чата
+    removed = False
+    for job in scheduler.get_jobs():
+        if job.id.startswith(f"pub_match_{chat_id}"):
+            scheduler.remove_job(job.id)
+            removed = True
+
+    if removed:
         await message.answer("Automated schedule has been cancelled.")
     else:
         await message.answer("No active schedule found.")

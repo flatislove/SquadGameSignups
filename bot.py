@@ -9,7 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
-from storage import get_chat_data, update_chat_data
+from storage import get_chat_data, update_chat_data, load_data, save_data
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
@@ -20,12 +20,18 @@ dp = Dispatcher()
 
 scheduler = AsyncIOScheduler()
 
-async def is_admin(chat_id: int, user_id: int) -> bool:
-    try:
-        member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
-        return member.status in ["creator", "administrator"]
-    except Exception:
-        return False
+def auto_save_group(message: types.Message):
+    if message.chat.type in ["group", "supergroup"]:
+        chat_id = str(message.chat.id)
+        data = load_data()
+        if "global" not in data:
+            data["global"] = {}
+        data["global"]["linked_chat_id"] = chat_id
+        save_data(data)
+        return chat_id
+    else:
+        data = load_data()
+        return data.get("global", {}).get("linked_chat_id")
 
 async def send_scheduled_game(chat_id: str):
     chat_data = get_chat_data(chat_id)
@@ -45,22 +51,25 @@ async def send_scheduled_game(chat_id: str):
     except Exception as e:
         logging.error(f"Failed to send scheduled message to {chat_id}: {e}")
 
+@dp.message()
+async def global_message_middleware(message: types.Message, state=None):
+    auto_save_group(message)
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    auto_save_group(message)
     await message.answer(
         "Hello! I am **Squad Game Signups** — a bot for organizing match signups and managing registrations."
     )
 
 @dp.message(Command("newgame"))
 async def cmd_newgame(message: types.Message):
-    if message.chat.type in ["group", "supergroup"]:
-        if not await is_admin(message.chat.id, message.from_user.id):
-            await message.answer("Only group administrators can use this command.")
-            return
+    chat_id = auto_save_group(message)
+    if not chat_id:
+        await message.answer("No linked group found. Please add the bot to a group first.")
+        return
 
-    chat_id = str(message.chat.id)
     chat_data = get_chat_data(chat_id)
-    
     chat_data["active_match"] = True
     chat_data["players"] = {}
     update_chat_data(chat_id, chat_data)
@@ -68,20 +77,21 @@ async def cmd_newgame(message: types.Message):
     builder = InlineKeyboardBuilder()
     builder.button(text="📝 Sign Up", callback_data="signup")
     
-    await message.answer(
-        "🏐 **New Match Announced!**\nClick the button below to secure your spot.",
+    await bot.send_message(
+        chat_id=int(chat_id),
+        text="🏐 **New Match Announced!**\nClick the button below to secure your spot.",
         reply_markup=builder.as_markup()
     )
+    if message.chat.type == "private":
+        await message.answer("Match successfully announced in the group!")
 
 @dp.message(Command("set_schedule"))
 async def cmd_set_schedule(message: types.Message):
-    if message.chat.type in ["group", "supergroup"]:
-        if not await is_admin(message.chat.id, message.from_user.id):
-            await message.answer("Only group administrators can use this command.")
-            return
+    chat_id = auto_save_group(message)
+    if not chat_id:
+        await message.answer("No linked group found.")
+        return
 
-    chat_id = str(message.chat.id)
-    
     job_id = f"game_match_{chat_id}"
     if scheduler.get_job(job_id):
         scheduler.remove_job(job_id)
@@ -98,19 +108,17 @@ async def cmd_set_schedule(message: types.Message):
 
 @dp.message(Command("cancel_schedule"))
 async def cmd_cancel_schedule(message: types.Message):
-    if message.chat.type in ["group", "supergroup"]:
-        if not await is_admin(message.chat.id, message.from_user.id):
-            await message.answer("Only group administrators can use this command.")
-            return
+    chat_id = auto_save_group(message)
+    if not chat_id:
+        await message.answer("No linked group found.")
+        return
 
-    chat_id = str(message.chat.id)
     job_id = f"game_match_{chat_id}"
-    
     if scheduler.get_job(job_id):
         scheduler.remove_job(job_id)
         await message.answer("Automated schedule has been cancelled.")
     else:
-        await message.answer("No active schedule found for this chat.")
+        await message.answer("No active schedule found.")
 
 @dp.callback_query(lambda c: c.data == "signup")
 async def process_signup(callback: types.CallbackQuery):

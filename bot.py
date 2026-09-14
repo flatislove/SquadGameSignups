@@ -20,20 +20,94 @@ dp = Dispatcher()
 
 scheduler = AsyncIOScheduler()
 
-def auto_save_group(message: types.Message):
-    if message.chat.type in ["group", "supergroup"]:
-        chat_id = str(message.chat.id)
-        data = load_data()
-        if "global" not in data:
-            data["global"] = {}
-        data["global"]["linked_chat_id"] = chat_id
-        save_data(data)
-        return chat_id
-    else:
-        data = load_data()
-        return data.get("global", {}).get("linked_chat_id")
+def save_chat(chat_id: str):
+    data = load_data()
+    if "global" not in data:
+        data["global"] = {}
+    data["global"]["linked_chat_id"] = chat_id
+    save_data(data)
+    print(f"Saved linked_chat_id: {chat_id}")
 
-async def send_scheduled_game(chat_id: str):
+def get_linked_chat():
+    data = load_data()
+    return data.get("global", {}).get("linked_chat_id")
+
+@dp.message(lambda message: message.chat.type in ["group", "supergroup"])
+async def group_activity_handler(message: types.Message):
+    save_chat(str(message.chat.id))
+
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    if message.chat.type in ["group", "supergroup"]:
+        save_chat(str(message.chat.id))
+        await message.answer("Group successfully linked!")
+    else:
+        linked = get_linked_chat()
+        await message.answer(
+            f"Hello! I am **Squad Game Signups**.\nLinked group ID: `{linked}`"
+        )
+
+@dp.message(Command("newgame"))
+async def cmd_newgame(message: types.Message):
+    chat_id = get_linked_chat()
+    if not chat_id:
+        await message.answer("No linked group found. Please send any message in your group first.")
+        return
+
+    chat_data = get_chat_data(chat_id)
+    chat_data["active_match"] = True
+    chat_data["players"] = {}
+    update_chat_data(chat_id, chat_data)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📝 Sign Up", callback_data="signup")
+    
+    try:
+        await bot.send_message(
+            chat_id=int(chat_id),
+            text="🏐 **New Match Announced!**\nClick the button below to secure your spot.",
+            reply_markup=builder.as_markup()
+        )
+        if message.chat.type == "private":
+            await message.answer("Match successfully announced in the group!")
+    except Exception as e:
+        await message.answer(f"Failed to send message to group: {e}")
+
+@dp.message(Command("set_schedule"))
+async def cmd_set_schedule(message: types.Message):
+    chat_id = get_linked_chat()
+    if not chat_id:
+        await message.answer("No linked group found.")
+        return
+
+    job_id = f"game_match_{chat_id}"
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+
+    scheduler.add_job(
+        lambda: asyncio.create_task(send_scheduled_game_job(chat_id)),
+        CronTrigger(day_of_week="tue,thu", hour=10, minute=0),
+        id=job_id,
+        replace_existing=True
+    )
+    
+    await message.answer("Schedule successfully set for Tuesday and Thursday at 10:00 AM.")
+
+@dp.message(Command("cancel_schedule"))
+async def cmd_cancel_schedule(message: types.Message):
+    chat_id = get_linked_chat()
+    if not chat_id:
+        await message.answer("No linked group found.")
+        return
+
+    job_id = f"game_match_{chat_id}"
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+        await message.answer("Automated schedule has been cancelled.")
+    else:
+        await message.answer("No active schedule found.")
+
+async def send_scheduled_game_job(chat_id: str):
     chat_data = get_chat_data(chat_id)
     chat_data["active_match"] = True
     chat_data["players"] = {}
@@ -49,76 +123,7 @@ async def send_scheduled_game(chat_id: str):
             reply_markup=builder.as_markup()
         )
     except Exception as e:
-        logging.error(f"Failed to send scheduled message to {chat_id}: {e}")
-
-@dp.message()
-async def global_message_middleware(message: types.Message, state=None):
-    auto_save_group(message)
-
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    auto_save_group(message)
-    await message.answer(
-        "Hello! I am **Squad Game Signups** — a bot for organizing match signups and managing registrations."
-    )
-
-@dp.message(Command("newgame"))
-async def cmd_newgame(message: types.Message):
-    chat_id = auto_save_group(message)
-    if not chat_id:
-        await message.answer("No linked group found. Please add the bot to a group first.")
-        return
-
-    chat_data = get_chat_data(chat_id)
-    chat_data["active_match"] = True
-    chat_data["players"] = {}
-    update_chat_data(chat_id, chat_data)
-    
-    builder = InlineKeyboardBuilder()
-    builder.button(text="📝 Sign Up", callback_data="signup")
-    
-    await bot.send_message(
-        chat_id=int(chat_id),
-        text="🏐 **New Match Announced!**\nClick the button below to secure your spot.",
-        reply_markup=builder.as_markup()
-    )
-    if message.chat.type == "private":
-        await message.answer("Match successfully announced in the group!")
-
-@dp.message(Command("set_schedule"))
-async def cmd_set_schedule(message: types.Message):
-    chat_id = auto_save_group(message)
-    if not chat_id:
-        await message.answer("No linked group found.")
-        return
-
-    job_id = f"game_match_{chat_id}"
-    if scheduler.get_job(job_id):
-        scheduler.remove_job(job_id)
-
-    scheduler.add_job(
-        send_scheduled_game,
-        CronTrigger(day_of_week="tue,thu", hour=10, minute=0),
-        id=job_id,
-        args=[chat_id],
-        replace_existing=True
-    )
-    
-    await message.answer("Schedule successfully set! Automated matches will be announced every Tuesday and Thursday at 10:00 AM.")
-
-@dp.message(Command("cancel_schedule"))
-async def cmd_cancel_schedule(message: types.Message):
-    chat_id = auto_save_group(message)
-    if not chat_id:
-        await message.answer("No linked group found.")
-        return
-
-    job_id = f"game_match_{chat_id}"
-    if scheduler.get_job(job_id):
-        scheduler.remove_job(job_id)
-        await message.answer("Automated schedule has been cancelled.")
-    else:
-        await message.answer("No active schedule found.")
+        logging.error(f"Failed to send scheduled message: {e}")
 
 @dp.callback_query(lambda c: c.data == "signup")
 async def process_signup(callback: types.CallbackQuery):
@@ -140,7 +145,7 @@ async def process_signup(callback: types.CallbackQuery):
         status_text = "You have been removed from the list."
     else:
         players[user_id] = username
-        status_text = "You are successfully registered!"
+        status_text = "Successfully registered!"
         
     update_chat_data(chat_id, chat_data)
     

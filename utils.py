@@ -26,8 +26,12 @@ def build_announcement_text(chat_data: dict):
         safe_name = escape_md(full_name)
         username = pdata.get("username")
         
+        # Если передан username, выводим ссылку на профиль через t.me
         if username:
             clean_username = username.lstrip("@")
+            user_link = f"[{safe_name}](https://t.me/{clean_username})"
+        elif str(uid).startswith("username_"):
+            clean_username = uid.replace("username_", "").lstrip("@")
             user_link = f"[{safe_name}](https://t.me/{clean_username})"
         elif str(uid).startswith("manual_") or not str(uid).isdigit():
             user_link = safe_name
@@ -48,6 +52,9 @@ def build_announcement_text(chat_data: dict):
         
         if username:
             clean_username = username.lstrip("@")
+            user_link = f"[{safe_name}](https://t.me/{clean_username})"
+        elif str(uid).startswith("username_"):
+            clean_username = uid.replace("username_", "").lstrip("@")
             user_link = f"[{safe_name}](https://t.me/{clean_username})"
         elif str(uid).startswith("manual_") or not str(uid).isdigit():
             user_link = safe_name

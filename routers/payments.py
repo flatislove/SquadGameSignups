@@ -1,7 +1,7 @@
 from aiogram import Router, types
 
 from loader import bot
-from storage import get_chat_data
+from storage import get_chat_data, update_chat_data
 from keyboards import get_main_menu_keyboard, get_groups_keyboard, get_players_pay_keyboard
 from utils import get_user_admin_groups, update_group_announcement
 
@@ -68,7 +68,7 @@ async def process_select_pay_group(callback: types.CallbackQuery):
 async def process_pm_pay_selection(callback: types.CallbackQuery):
     parts = callback.data.split("_")
     chat_id = parts[2]
-    target_uid = parts[3]
+    target_uid = "_".join(parts[3:])
 
     try:
         member = await bot.get_chat_member(chat_id=int(chat_id), user_id=callback.from_user.id)
@@ -85,8 +85,6 @@ async def process_pm_pay_selection(callback: types.CallbackQuery):
     if target_uid in players:
         current_status = players[target_uid].get("paid", False)
         players[target_uid]["paid"] = not current_status
-        get_chat_data(chat_id) 
-        from storage import update_chat_data
         update_chat_data(chat_id, chat_data)
 
         await update_group_announcement(bot, chat_id)

@@ -454,11 +454,12 @@ async def admin_delete_player_action(callback: types.CallbackQuery):
     update_chat_data(chat_id, chat_data)
     await update_group_announcement(bot, chat_id)
 
+    # Исправлено: отправка уведомления самому игроку, если его uid является числовым Telegram ID
     if is_paid and str(uid).isdigit():
         try:
             await bot.send_message(
-                chat_id=callback.from_user.id,
-                text=f"⚠️ *Внимание!*\nВы удалили оплатившего игрока *{escape_md(p_name)}* из матча. Не забудьте вернуть ему деньги!"
+                chat_id=int(uid),
+                text=f"⚠️ *Внимание!*\nАдминистратор удалил вас из матча *{escape_md(p_name)}*. Не забудьте получить возврат средств!"
             )
         except Exception:
             pass

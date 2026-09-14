@@ -9,6 +9,7 @@ from utils import escape_md, build_announcement_text, update_group_announcement
 router = Router()
 
 async def notify_admins_action(chat_id: str, action_text: str, user: types.User):
+    """Уведомление администраторов чата о действиях пользователя."""
     group_data = get_chat_data(chat_id)
     group_title = group_data.get("group_title", f"Группа {chat_id}")
     
@@ -38,6 +39,7 @@ async def notify_admins_action(chat_id: str, action_text: str, user: types.User)
     except Exception as e:
         print(f"Failed to fetch chat admins for logging: {e}")
 
+
 @router.callback_query(lambda c: c.data == "signup")
 async def process_signup(callback: types.CallbackQuery):
     chat_id = str(callback.message.chat.id)
@@ -56,11 +58,15 @@ async def process_signup(callback: types.CallbackQuery):
     paid_spot_transfers = chat_data.setdefault("paid_spot_transfers", {})
     
     max_players = int(chat_data.get("match_details", {}).get("max_players", 12))
-    
+    status_text = ""
+
+    # 1. Игрок уже в основном составе -> Выход из основы
     if user_id in players:
         pdata = players[user_id]
+        
         if pdata.get("paid", False):
             if reserve:
+                # Есть оплата и есть резерв: предлагаем передать место первому из резерва
                 next_reserve_uid, next_reserve_data = next(iter(reserve.items()))
                 
                 paid_spot_transfers[user_id] = {
@@ -73,11 +79,16 @@ async def process_signup(callback: types.CallbackQuery):
                 del players[user_id]
                 del reserve[next_reserve_uid]
                 
-                players[next_reserve_uid] = {"name": next_reserve_data["name"], "username": next_reserve_data.get("username"), "paid": False}
+                players[next_reserve_uid] = {
+                    "name": next_reserve_data["name"], 
+                    "username": next_reserve_data.get("username"), 
+                    "paid": False
+                }
                 
                 update_chat_data(chat_id, chat_data)
                 await update_group_announcement(bot, chat_id)
                 
+                # Запрос подтверждения перевода денег у выходящего игрока в ЛС
                 try:
                     kb = InlineKeyboardBuilder()
                     kb.button(text="✅ Да, деньги переведены", callback_data=f"transfer_yes_{chat_id}_{user_id}_{next_reserve_uid}")
@@ -96,6 +107,7 @@ async def process_signup(callback: types.CallbackQuery):
                 status_text = "Вы выписаны. Бот уточняет у вас в ЛС насчет перевода денег."
                 await notify_admins_action(chat_id, "Отмена записи (оплачено, передача места резервисту)", user)
             else:
+                # Оплачено, но резерва нет -> Требуется возврат от админов
                 refund_pending[user_id] = pdata
                 del players[user_id]
                 update_chat_data(chat_id, chat_data)
@@ -122,21 +134,28 @@ async def process_signup(callback: types.CallbackQuery):
                 status_text = "Вы выписаны. Администратор уведомлен о возврате оплаты."
                 await notify_admins_action(chat_id, "Отмена записи (оплачено, требуется возврат средств)", user)
         else:
+            # Не оплачено -> Просто удаляем и подтягиваем первого из резерва (если есть)
             del players[user_id]
             if reserve:
                 r_uid, r_data = next(iter(reserve.items()))
                 del reserve[r_uid]
-                players[r_uid] = {"name": r_data["name"], "username": r_data.get("username"), "paid": False}
+                players[r_uid] = {
+                    "name": r_data["name"], 
+                    "username": r_data.get("username"), 
+                    "paid": False
+                }
             update_chat_data(chat_id, chat_data)
             status_text = "Вы выписаны из списка участников."
             await notify_admins_action(chat_id, "Отмена записи из основного состава", user)
 
+    # 2. Игрок в резерве -> Выход из резерва
     elif user_id in reserve:
         del reserve[user_id]
         update_chat_data(chat_id, chat_data)
         status_text = "Вы удалены из резерва."
         await notify_admins_action(chat_id, "Отмена записи из резерва", user)
 
+    # 3. Игрока нет нигде -> Запись
     else:
         if len(players) < max_players:
             was_paid = False
@@ -151,8 +170,10 @@ async def process_signup(callback: types.CallbackQuery):
             reserve[user_id] = {"name": full_name, "username": user.username}
             status_text = "Мест нет, вы добавлены в Резерв!"
             await notify_admins_action(chat_id, "Запись в резерв", user)
+        
         update_chat_data(chat_id, chat_data)
     
+    # Обновляем сообщение с анонсом в чате
     try:
         await callback.message.edit_text(
             text=build_announcement_text(chat_data),
@@ -164,6 +185,7 @@ async def process_signup(callback: types.CallbackQuery):
         print(f"Failed to update message on signup: {e}")
         
     await callback.answer(status_text)
+
 
 @router.callback_query(lambda c: c.data == "admin_toggle_paid")
 async def admin_toggle_paid_menu(callback: types.CallbackQuery):
@@ -198,6 +220,7 @@ async def admin_toggle_paid_menu(callback: types.CallbackQuery):
         reply_markup=kb.as_markup()
     )
     await callback.answer()
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("toggle_paid_"))
 async def process_toggle_paid(callback: types.CallbackQuery):
@@ -242,6 +265,7 @@ async def process_toggle_paid(callback: types.CallbackQuery):
     except Exception:
         pass
 
+
 @router.callback_query(lambda c: c.data == "close_admin_paid_menu")
 async def close_admin_paid_menu(callback: types.CallbackQuery):
     try:
@@ -249,6 +273,7 @@ async def close_admin_paid_menu(callback: types.CallbackQuery):
     except Exception:
         pass
     await callback.answer()
+
 
 @router.callback_query(lambda c: c.data and (c.data.startswith("transfer_yes_") or c.data.startswith("transfer_no_")))
 async def process_transfer_confirmation(callback: types.CallbackQuery):
@@ -286,6 +311,7 @@ async def process_transfer_confirmation(callback: types.CallbackQuery):
         del paid_spot_transfers[leaving_uid]
         refund_pending[leaving_uid] = pdata
         
+        # Если резервист не подтвердил перевод, возвращаем его в резерв, а основу освобождаем
         if receiver_uid in players:
             receiver_data = players.pop(receiver_uid)
             new_reserve = {receiver_uid: receiver_data}
@@ -318,6 +344,7 @@ async def process_transfer_confirmation(callback: types.CallbackQuery):
         await notify_admins_action(chat_id, "Отказ от перевода средств резервистом (требуется возврат средств)", callback.from_user)
 
     await callback.answer()
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("refund_ok_"))
 async def process_refund_confirmation(callback: types.CallbackQuery):

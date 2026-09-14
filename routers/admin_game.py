@@ -360,10 +360,10 @@ async def skip_manual_username(callback: types.CallbackQuery, state: FSMContext)
     max_players = int(chat_data.get("match_details", {}).get("max_players", 12))
 
     if len(players) < max_players:
-        players[manual_uid] = {"name": player_name, "paid": False}
+        players[manual_uid] = {"name": player_name, "username": None, "paid": False}
         msg_res = f"Игрок *{escape_md(player_name)}* добавлен вручную в основной состав."
     else:
-        reserve[manual_uid] = {"name": player_name, "paid": False}
+        reserve[manual_uid] = {"name": player_name, "username": None, "paid": False}
         msg_res = f"Основной состав полон. Игрок *{escape_md(player_name)}* добавлен вручную в резерв."
 
     update_chat_data(chat_id, chat_data)
@@ -389,10 +389,10 @@ async def process_manual_player_username(message: types.Message, state: FSMConte
     max_players = int(chat_data.get("match_details", {}).get("max_players", 12))
 
     if len(players) < max_players:
-        players[manual_uid] = {"name": player_name, "paid": False}
+        players[manual_uid] = {"name": player_name, "username": username, "paid": False}
         msg_res = f"Игрок *{escape_md(player_name)}* (@{escape_md(username)}) добавлен вручную в основной состав."
     else:
-        reserve[manual_uid] = {"name": player_name, "paid": False}
+        reserve[manual_uid] = {"name": player_name, "username": username, "paid": False}
         msg_res = f"Основной состав полон. Игрок *{escape_md(player_name)}* (@{escape_md(username)}) добавлен вручную в резерв."
 
     update_chat_data(chat_id, chat_data)

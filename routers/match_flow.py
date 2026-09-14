@@ -73,6 +73,8 @@ async def process_signup(callback: types.CallbackQuery):
                 del players[user_id]
                 del reserve[next_reserve_uid]
                 
+                players[next_reserve_uid] = {"name": next_reserve_data["name"], "username": next_reserve_data.get("username"), "paid": False}
+                
                 update_chat_data(chat_id, chat_data)
                 await update_group_announcement(bot, chat_id)
                 
@@ -124,7 +126,7 @@ async def process_signup(callback: types.CallbackQuery):
             if reserve:
                 r_uid, r_data = next(iter(reserve.items()))
                 del reserve[r_uid]
-                players[r_uid] = {"name": r_data["name"], "paid": False}
+                players[r_uid] = {"name": r_data["name"], "username": r_data.get("username"), "paid": False}
             update_chat_data(chat_id, chat_data)
             status_text = "Вы выписаны из списка участников."
             await notify_admins_action(chat_id, "Отмена записи из основного состава", user)
@@ -142,11 +144,11 @@ async def process_signup(callback: types.CallbackQuery):
                 was_paid = True
                 del refund_pending[user_id]
                 
-            players[user_id] = {"name": full_name, "paid": was_paid}
+            players[user_id] = {"name": full_name, "username": user.username, "paid": was_paid}
             status_text = "Вы успешно записались в основной состав!"
             await notify_admins_action(chat_id, "Запись в основной состав", user)
         else:
-            reserve[user_id] = {"name": full_name}
+            reserve[user_id] = {"name": full_name, "username": user.username}
             status_text = "Мест нет, вы добавлены в Резерв!"
             await notify_admins_action(chat_id, "Запись в резерв", user)
         update_chat_data(chat_id, chat_data)
@@ -272,7 +274,8 @@ async def process_transfer_confirmation(callback: types.CallbackQuery):
     pdata = transfer_info["pdata"]
 
     if action == "yes":
-        players[receiver_uid] = {"name": receiver_name, "paid": True}
+        if receiver_uid in players:
+            players[receiver_uid]["paid"] = True
         del paid_spot_transfers[leaving_uid]
         update_chat_data(chat_id, chat_data)
         await update_group_announcement(bot, chat_id)
@@ -283,9 +286,12 @@ async def process_transfer_confirmation(callback: types.CallbackQuery):
         del paid_spot_transfers[leaving_uid]
         refund_pending[leaving_uid] = pdata
         
-        new_reserve = {receiver_uid: {"name": receiver_name}}
-        new_reserve.update(reserve)
-        chat_data["reserve"] = new_reserve
+        if receiver_uid in players:
+            receiver_data = players.pop(receiver_uid)
+            new_reserve = {receiver_uid: receiver_data}
+            new_reserve.update(reserve)
+            chat_data["reserve"] = new_reserve
+        
         update_chat_data(chat_id, chat_data)
         await update_group_announcement(bot, chat_id)
 

@@ -24,8 +24,12 @@ def build_announcement_text(chat_data: dict):
     for i, (uid, pdata) in enumerate(player_items):
         full_name = pdata["name"]
         safe_name = escape_md(full_name)
+        username = pdata.get("username")
         
-        if str(uid).startswith("manual_") or not str(uid).isdigit():
+        if username:
+            clean_username = username.lstrip("@")
+            user_link = f"[{safe_name}](https://t.me/{clean_username})"
+        elif str(uid).startswith("manual_") or not str(uid).isdigit():
             user_link = safe_name
         else:
             user_link = f"[{safe_name}](tg://user?id={uid})"
@@ -40,8 +44,12 @@ def build_announcement_text(chat_data: dict):
     for i, (uid, rdata) in enumerate(reserve_items):
         full_name = rdata["name"]
         safe_name = escape_md(full_name)
+        username = rdata.get("username")
         
-        if str(uid).startswith("manual_") or not str(uid).isdigit():
+        if username:
+            clean_username = username.lstrip("@")
+            user_link = f"[{safe_name}](https://t.me/{clean_username})"
+        elif str(uid).startswith("manual_") or not str(uid).isdigit():
             user_link = safe_name
         else:
             user_link = f"[{safe_name}](tg://user?id={uid})"

@@ -2,20 +2,17 @@ import asyncio
 import logging
 import os
 from aiohttp import web
-from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 
-from handlers import register_handlers
+from loader import bot, dp, scheduler
+
+from routers.base import router as base_router
+from routers.admin_game import router as admin_game_router
+from routers.payments import router as payments_router
+from routers.match_flow import router as match_flow_router
 
 load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
-
-bot = Bot(token=TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
-scheduler = AsyncIOScheduler()
 
 async def handle_ping(request):
     return web.Response(text="Bot is running!")
@@ -35,7 +32,12 @@ async def main():
     logging.basicConfig(level=logging.INFO)
     print("Starting bot and scheduler...")
     
-    register_handlers(dp, bot, scheduler)
+    # Регистрация всех роутеров в диспетчере
+    dp.include_router(base_router)
+    dp.include_router(admin_game_router)
+    dp.include_router(payments_router)
+    dp.include_router(match_flow_router)
+    
     scheduler.start()
     
     await asyncio.gather(
@@ -44,4 +46,7 @@ async def main():
     )
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Bot stopped!")

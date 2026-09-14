@@ -397,8 +397,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, scheduler: AsyncIOScheduler):
                 pass
                 
         await callback.answer("Статус обновлен")
-
-    @dp.callback_query(lambda c: c.data == "signup")
+@dp.callback_query(lambda c: c.data == "signup")
     async def process_signup(callback: types.CallbackQuery):
         chat_id = str(callback.message.chat.id)
         user = callback.from_user
@@ -417,6 +416,7 @@ def register_handlers(dp: Dispatcher, bot: Bot, scheduler: AsyncIOScheduler):
         
         max_players = int(chat_data.get("match_details", {}).get("max_players", 12))
         
+        # ЕСЛИ ИГРОК УЖЕ В ОСНОВНОМ СОСТАВЕ (ОТМЕНЯЕТ ЗАПИСЬ)
         if user_id in players:
             pdata = players[user_id]
             if pdata.get("paid", False):
@@ -486,22 +486,29 @@ def register_handlers(dp: Dispatcher, bot: Bot, scheduler: AsyncIOScheduler):
                 update_chat_data(chat_id, chat_data)
                 status_text = "Вы выписаны из списка участников."
 
+        # ЕСЛИ ИГРОК В РЕЗЕРВЕ (УДАЛЯЕТСЯ ИЗ РЕЗЕРВА)
         elif user_id in reserve:
             del reserve[user_id]
             update_chat_data(chat_id, chat_data)
             status_text = "Вы удалены из резерва."
 
+        # ЕСЛИ ИГРОКА НЕ БЫЛО НИГДЕ (ПЫТАЕТСЯ ЗАПИСАТЬСЯ ЗАНОВО)
         else:
+            # Очищаем все зависшие статусы возвратов или переводов при повторной записи
+            was_paid = False
+            if user_id in refund_pending:
+                was_paid = True
+                del refund_pending[user_id]
+            if user_id in paid_spot_transfers:
+                del paid_spot_transfers[user_id]
+
             if len(players) < max_players:
-                was_paid = False
-                if user_id in refund_pending:
-                    was_paid = True
-                    del refund_pending[user_id]
                 players[user_id] = {"name": full_name, "paid": was_paid}
                 status_text = "Вы успешно записались в основной состав!"
             else:
                 reserve[user_id] = {"name": full_name}
                 status_text = "Мест нет, вы добавлены в Резерв!"
+            
             update_chat_data(chat_id, chat_data)
         
         try:

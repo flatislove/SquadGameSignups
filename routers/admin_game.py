@@ -1,14 +1,84 @@
 from datetime import datetime, timezone
 from aiogram import Router, types
 from aiogram.fsm.context import FSMContext
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from loader import bot, scheduler
 from states import NewGameForm
 from storage import load_data, save_data, get_chat_data, update_chat_data
-from keyboards import get_main_menu_keyboard, get_groups_keyboard, get_match_keyboard, get_scheduled_announcements_keyboard
-from utils import LOCAL_TZ, build_announcement_text, get_user_admin_groups
+from keyboards import (
+    get_main_menu_keyboard, 
+    get_groups_keyboard, 
+    get_match_keyboard, 
+    get_scheduled_announcements_keyboard
+)
+from utils import LOCAL_TZ, build_announcement_text, get_user_admin_groups, escape_md, update_group_announcement
 
 router = Router()
+
+FORM_STEPS = [
+    (NewGameForm.waiting_for_date, "📅 Введите дату матча (например, 20.09.2026):"),
+    (NewGameForm.waiting_for_time, "⏰ Введите время начала матча (например, 19:00):"),
+    (NewGameForm.waiting_for_end_time, "🏁 Введите время окончания матча (например, 21:00):"),
+    (NewGameForm.waiting_for_loc_name, "📍 Введите название места (например, Спортивный зал №1):"),
+    (NewGameForm.waiting_for_loc_link, "🔗 Введите ссылку на карту (например, https://maps.app.goo.gl/...):"),
+    (NewGameForm.waiting_for_cost, "💰 Введите стоимость в KZT (например, 2500):"),
+    (NewGameForm.waiting_for_phone, "📱 Введите номер телефона для перевода (например, +77011234567):"),
+    (NewGameForm.waiting_for_name, "👤 Введите имя получателя (например, Владислав В.):"),
+    (NewGameForm.waiting_for_max_players, "👥 Введите максимальное количество игроков в основном составе (например, 12):"),
+    (NewGameForm.waiting_for_pub_time, "🚀 Введите время публикации анонса (формат: ДД.ММ.ГГГГ ЧЧ:ММ, например, 18.09.2026 12:00):")
+]
+
+async def show_step(message_or_callback, state: FSMContext, step_idx: int, edit: bool = True):
+    await state.update_data(current_step=step_idx)
+    state_to_set, prompt_text = FORM_STEPS[step_idx]
+    await state.set_state(state_to_set)
+
+    data = await state.get_data()
+    group_title = data.get("group_title", "Группа")
+
+    filled_info = f"🛠 Создание матча для: *{escape_md(group_title)}*\n\n"
+    keys = ["date", "time", "end_time", "loc_name", "loc_link", "cost", "phone", "name", "max_players"]
+    labels = ["Дата", "Начало", "Конец", "Место", "Ссылка", "Цена", "Телефон", "Получатель", "Максимум"]
+    
+    for i in range(step_idx):
+        val = data.get(keys[i])
+        if val:
+            filled_info += f"▫️ {labels[i]}: {escape_md(str(val))}\n"
+
+    filled_info += f"\n*{prompt_text}*"
+
+    kb = InlineKeyboardBuilder()
+    if step_idx > 0:
+        kb.button(text="⬅️ Назад", callback_data="form_back")
+    if step_idx < len(FORM_STEPS) - 1:
+        kb.button(text="Вперед ➡️", callback_data="form_forward")
+    kb.button(text="❌ Отменить", callback_data="form_cancel")
+    kb.adjust(2, 1)
+
+    if edit and isinstance(message_or_callback, types.CallbackQuery):
+        try:
+            await message_or_callback.message.edit_text(filled_info, parse_mode="Markdown", reply_markup=kb.as_markup())
+        except Exception:
+            pass
+    elif isinstance(message_or_callback, types.Message):
+        try:
+            await message_or_callback.delete()
+        except Exception:
+            pass
+        data_msg_id = data.get("form_message_id")
+        chat_id = message_or_callback.chat.id
+        if data_msg_id:
+            try:
+                await bot.edit_message_text(
+                    chat_id=chat_id, message_id=int(data_msg_id),
+                    text=filled_info, parse_mode="Markdown", reply_markup=kb.as_markup()
+                )
+                return
+            except Exception:
+                pass
+        sent = await message_or_callback.answer(filled_info, parse_mode="Markdown", reply_markup=kb.as_markup())
+        await state.update_data(form_message_id=sent.message_id)
 
 async def send_custom_announcement(bot_instance, chat_id: str):
     chat_data = get_chat_data(chat_id)
@@ -41,8 +111,8 @@ async def menu_new_game_callback(callback: types.CallbackQuery, state: FSMContex
 
     if len(admin_groups) == 1:
         await state.update_data(target_chat_id=admin_groups[0][0], group_title=admin_groups[0][1])
-        await state.set_state(NewGameForm.waiting_for_date)
-        await callback.message.edit_text(f"Создание матча для группы: *{admin_groups[0][1]}*\n\n📅 Введите дату матча (например, 20.09.2026):", parse_mode="Markdown")
+        await state.update_data(form_message_id=callback.message.message_id)
+        await show_step(callback, state, 0)
     else:
         await callback.message.edit_text(
             "Выберите группу, для которой хотите создать матч:",
@@ -65,115 +135,110 @@ async def process_select_new_group(callback: types.CallbackQuery, state: FSMCont
     data = load_data()
     group_title = data.get("groups", {}).get(chat_id, {}).get("group_title", f"Группа {chat_id}")
 
-    await state.update_data(target_chat_id=chat_id, group_title=group_title)
-    await state.set_state(NewGameForm.waiting_for_date)
-    await callback.message.edit_text(f"Создание матча для группы: *{group_title}*\n\n📅 Введите дату матча (например, 20.09.2026):", parse_mode="Markdown")
+    await state.update_data(target_chat_id=chat_id, group_title=group_title, form_message_id=callback.message.message_id)
+    await show_step(callback, state, 0)
     await callback.answer()
 
-@router.message(NewGameForm.waiting_for_date)
-async def process_match_date(message: types.Message, state: FSMContext):
-    await state.update_data(date=message.text)
-    await state.set_state(NewGameForm.waiting_for_time)
-    await message.answer("⏰ Введите время начала матча (например, 19:00):")
-
-@router.message(NewGameForm.waiting_for_time)
-async def process_match_time(message: types.Message, state: FSMContext):
-    await state.update_data(time=message.text)
-    await state.set_state(NewGameForm.waiting_for_end_time)
-    await message.answer("🏁 Введите время окончания матча (например, 21:00):")
-
-@router.message(NewGameForm.waiting_for_end_time)
-async def process_match_end_time(message: types.Message, state: FSMContext):
-    await state.update_data(end_time=message.text)
-    await state.set_state(NewGameForm.waiting_for_loc_name)
-    await message.answer("📍 Введите название места (например, Спортивный зал №1):")
-
-@router.message(NewGameForm.waiting_for_loc_name)
-async def process_match_loc_name(message: types.Message, state: FSMContext):
-    await state.update_data(loc_name=message.text)
-    await state.set_state(NewGameForm.waiting_for_loc_link)
-    await message.answer("🔗 Введите ссылку на карту (например, https://maps.app.goo.gl/...):")
-
-@router.message(NewGameForm.waiting_for_loc_link)
-async def process_match_loc_link(message: types.Message, state: FSMContext):
-    await state.update_data(loc_link=message.text)
-    await state.set_state(NewGameForm.waiting_for_cost)
-    await message.answer("💰 Введите стоимость в KZT (например, 2500):")
-
-@router.message(NewGameForm.waiting_for_cost)
-async def process_match_cost(message: types.Message, state: FSMContext):
-    await state.update_data(cost=message.text)
-    await state.set_state(NewGameForm.waiting_for_phone)
-    await message.answer("📱 Введите номер телефона для перевода (например, +77011234567):")
-
-@router.message(NewGameForm.waiting_for_phone)
-async def process_match_phone(message: types.Message, state: FSMContext):
-    await state.update_data(phone=message.text)
-    await state.set_state(NewGameForm.waiting_for_name)
-    await message.answer("👤 Введите имя получателя (например, Владислав В.):")
-
-@router.message(NewGameForm.waiting_for_name)
-async def process_match_name(message: types.Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await state.set_state(NewGameForm.waiting_for_max_players)
-    await message.answer("👥 Введите максимальное количество игроков в основном составе (например, 12):")
-
-@router.message(NewGameForm.waiting_for_max_players)
-async def process_match_max_players(message: types.Message, state: FSMContext):
-    if not message.text.isdigit():
-        await message.answer("Пожалуйста, введите число (например, 12):")
-        return
-    await state.update_data(max_players=int(message.text))
-    await state.set_state(NewGameForm.waiting_for_pub_time)
-    await message.answer("🚀 Введите время публикации анонса (формат: ДД.ММ.ГГГГ ЧЧ:ММ, например, 18.09.2026 12:00):")
-
-@router.message(NewGameForm.waiting_for_pub_time)
-async def process_pub_time(message: types.Message, state: FSMContext):
-    pub_time_str = message.text
-    form_data = await state.get_data()
+@router.callback_query(lambda c: c.data == "form_cancel")
+async def process_form_cancel(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
+    await callback.message.edit_text("❌ Создание матча отменено.", reply_markup=get_main_menu_keyboard())
+    await callback.answer()
 
-    try:
-        pub_dt_local = datetime.strptime(pub_time_str.strip(), "%d.%m.%Y %H:%M")
-        pub_dt_local = pub_dt_local.replace(tzinfo=LOCAL_TZ)
-        pub_dt_utc = pub_dt_local.astimezone(timezone.utc)
-    except ValueError:
-        await message.answer("Неверный формат даты! Используйте ДД.ММ.ГГГГ ЧЧ:ММ. Нажмите «Создать игру» в меню снова.")
+@router.callback_query(lambda c: c.data == "form_back")
+async def process_form_back(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    current_step = data.get("current_step", 0)
+    if current_step > 0:
+        await show_step(callback, state, current_step - 1)
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "form_forward")
+async def process_form_forward(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    current_step = data.get("current_step", 0)
+    keys = ["date", "time", "end_time", "loc_name", "loc_link", "cost", "phone", "name", "max_players", "pub_time"]
+    if current_step < len(FORM_STEPS) - 1 and data.get(keys[current_step]):
+        await show_step(callback, state, current_step + 1)
+    else:
+        await callback.answer("Сначала заполни текущее поле!", show_alert=True)
+
+@router.message(NewGameForm.waiting_for_date)
+@router.message(NewGameForm.waiting_for_time)
+@router.message(NewGameForm.waiting_for_end_time)
+@router.message(NewGameForm.waiting_for_loc_name)
+@router.message(NewGameForm.waiting_for_loc_link)
+@router.message(NewGameForm.waiting_for_cost)
+@router.message(NewGameForm.waiting_for_phone)
+@router.message(NewGameForm.waiting_for_name)
+@router.message(NewGameForm.waiting_for_max_players)
+@router.message(NewGameForm.waiting_for_pub_time)
+async def process_form_input(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    current_step = data.get("current_step", 0)
+    text = message.text.strip()
+
+    keys = ["date", "time", "end_time", "loc_name", "loc_link", "cost", "phone", "name", "max_players", "pub_time"]
+    
+    if current_step == 8 and not text.isdigit():
+        try:
+            await message.delete()
+        except Exception:
+            pass
         return
 
-    chat_id = form_data["target_chat_id"]
-    data = load_data()
-    groups = data.setdefault("groups", {})
-    chat_data = groups.setdefault(chat_id, {})
-    
-    chat_data["group_title"] = form_data["group_title"]
-    chat_data["match_details"] = {
-        "date": form_data["date"], "time": form_data["time"],
-        "end_time": form_data["end_time"], "loc_name": form_data["loc_name"],
-        "loc_link": form_data["loc_link"], "cost": form_data["cost"],
-        "phone": form_data["phone"], "name": form_data["name"],
-        "max_players": form_data["max_players"]
-    }
-    save_data(data)
+    await state.update_data({keys[current_step]: text})
 
-    job_id = f"pub_match_{chat_id}"
-    if scheduler.get_job(job_id):
-        scheduler.remove_job(job_id)
+    if current_step < len(FORM_STEPS) - 1:
+        await show_step(message, state, current_step + 1, edit=False)
+    else:
+        form_data = await state.get_data()
+        await state.clear()
 
-    scheduler.add_job(
-        send_custom_announcement,
-        "date",
-        run_date=pub_dt_utc,
-        args=[bot, chat_id],
-        id=job_id,
-        replace_existing=True
-    )
+        try:
+            pub_dt_local = datetime.strptime(form_data["pub_time"].strip(), "%d.%m.%Y %H:%M")
+            pub_dt_local = pub_dt_local.replace(tzinfo=LOCAL_TZ)
+            pub_dt_utc = pub_dt_local.astimezone(timezone.utc)
+        except ValueError:
+            await message.answer("⚠️ Неверный формат даты публикации! Используйте ДД.ММ.ГГГГ ЧЧ:ММ. Нажмите «Создать игру» снова.")
+            return
 
-    await message.answer(
-        f"Матч успешно запланирован к публикации на {pub_time_str} для группы *{form_data['group_title']}*!",
-        parse_mode="Markdown",
-        reply_markup=get_main_menu_keyboard()
-    )
+        chat_id = form_data["target_chat_id"]
+        db_data = load_data()
+        groups = db_data.setdefault("groups", {})
+        chat_data = groups.setdefault(chat_id, {})
+        
+        chat_data["group_title"] = form_data["group_title"]
+        chat_data["match_details"] = {
+            "date": form_data["date"], "time": form_data["time"],
+            "end_time": form_data["end_time"], "loc_name": form_data["loc_name"],
+            "loc_link": form_data["loc_link"], "cost": form_data["cost"],
+            "phone": form_data["phone"], "name": form_data["name"],
+            "max_players": int(form_data["max_players"])
+        }
+        save_data(db_data)
+
+        job_id = f"pub_match_{chat_id}"
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+
+        scheduler.add_job(
+            send_custom_announcement,
+            "date",
+            run_date=pub_dt_utc,
+            args=[bot, chat_id],
+            id=job_id,
+            replace_existing=True
+        )
+
+        form_msg_id = form_data.get("form_message_id")
+        success_text = f"✅ Матч успешно запланирован к публикации на *{form_data['pub_time']}* для группы *{escape_md(form_data['group_title'])}*!"
+        if form_msg_id:
+            try:
+                await bot.edit_message_text(chat_id=message.chat.id, message_id=form_msg_id, text=success_text, parse_mode="Markdown")
+            except Exception:
+                pass
+        await message.answer("Главное меню:", reply_markup=get_main_menu_keyboard())
 
 @router.callback_query(lambda c: c.data == "menu_manage_announcements")
 async def menu_manage_announcements(callback: types.CallbackQuery):
@@ -183,53 +248,100 @@ async def menu_manage_announcements(callback: types.CallbackQuery):
         return
 
     admin_chat_ids = [str(g[0]) for g in admin_groups]
-    
-    active_jobs = []
-    for job in scheduler.get_jobs():
-        if job.id.startswith("pub_match_"):
-            chat_id = job.id.replace("pub_match_", "")
-            if chat_id in admin_chat_ids:
-                active_jobs.append(job)
+    active_jobs = [j for j in scheduler.get_jobs() if j.id.startswith("pub_match_") and j.id.replace("pub_match_", "") in admin_chat_ids]
 
-    if not active_jobs:
+    data = load_data()
+    groups = data.get("groups", {})
+    published_active = [cid for cid, cdata in groups.items() if cid in admin_chat_ids and cdata.get("active_match")]
+
+    if not active_jobs and not published_active:
         await callback.message.edit_text(
-            "📭 В данный момент нет запланированных к публикации анонсов в ваших группах.",
+            "📭 В данный момент нет запланированных или активных матчей в ваших группах.",
             reply_markup=get_main_menu_keyboard()
         )
         await callback.answer()
         return
 
+    kb = InlineKeyboardBuilder()
+    for job in active_jobs:
+        chat_id = job.id.replace("pub_match_", "")
+        g_title = groups.get(chat_id, {}).get("group_title", chat_id)
+        kb.button(text=f"🛑 Отменить план: {g_title}", callback_data=f"stop_announcement_{chat_id}")
+    
+    for cid in published_active:
+        g_title = groups.get(cid, {}).get("group_title", cid)
+        kb.button(text=f"➕ Добавить игрока в: {g_title}", callback_data=f"admin_add_player_{cid}")
+
+    kb.button(text="🔙 Назад в меню", callback_data="back_to_main_menu")
+    kb.adjust(1)
+
     await callback.message.edit_text(
-        "📢 *Список запланированных анонсов:*\nВыберите анонс, публикацию которого хотите отменить:",
+        "📢 *Управление анонсами и матчами:*",
         parse_mode="Markdown",
-        reply_markup=get_scheduled_announcements_keyboard(active_jobs)
+        reply_markup=kb.as_markup()
     )
     await callback.answer()
 
 @router.callback_query(lambda c: c.data and c.data.startswith("stop_announcement_"))
 async def process_stop_announcement(callback: types.CallbackQuery):
     chat_id = callback.data.split("_")[2]
-    
     job_id = f"pub_match_{chat_id}"
-    job = scheduler.get_job(job_id)
-    if job:
-        job.remove()
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
 
     data = load_data()
-    groups = data.get("groups", {})
-    if chat_id in groups:
-        if "match_details" in groups[chat_id]:
-            del groups[chat_id]["match_details"]
-        if "active_match" in groups[chat_id]:
-            groups[chat_id]["active_match"] = False
-        if "players" in groups[chat_id]:
-            groups[chat_id]["players"] = {}
-        if "reserve" in groups[chat_id]:
-            groups[chat_id]["reserve"] = {}
+    if chat_id in data.get("groups", {}):
+        groups = data["groups"]
+        groups[chat_id].pop("match_details", None)
+        groups[chat_id]["active_match"] = False
+        groups[chat_id]["players"] = {}
+        groups[chat_id]["reserve"] = {}
         save_data(data)
 
     await callback.message.edit_text(
-        "🛑 Запланированная публикация анонса отменена.\nДанные очищены, бот больше не управляет этим матчем.",
+        "🛑 Запланированная публикация отменена, данные очищены.",
         reply_markup=get_main_menu_keyboard()
     )
-    await callback.answer("Анонс отменен")
+    await callback.answer("Успешно")
+
+@router.callback_query(lambda c: c.data and c.data.startswith("admin_add_player_"))
+async def admin_add_player_start(callback: types.CallbackQuery, state: FSMContext):
+    chat_id = callback.data.split("_")[3]
+    await state.set_state("waiting_for_manual_player_name")
+    await state.update_data(manual_chat_id=chat_id)
+    
+    kb = InlineKeyboardBuilder()
+    kb.button(text="❌ Отмена", callback_data="menu_manage_announcements")
+    
+    await callback.message.edit_text(
+        "👤 Введите Фамилию и Имя игрока, которого хотите добавить вручную:",
+        reply_markup=kb.as_markup()
+    )
+    await callback.answer()
+
+@router.message(lambda msg: True, state="waiting_for_manual_player_name")
+async def process_manual_player_input(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    chat_id = data.get("manual_chat_id")
+    await state.clear()
+
+    player_name = message.text.strip()
+    chat_data = get_chat_data(chat_id)
+    players = chat_data.setdefault("players", {})
+    reserve = chat_data.setdefault("reserve", {})
+    max_players = int(chat_data.get("match_details", {}).get("max_players", 12))
+
+    import time
+    manual_uid = f"manual_{int(time.time())}"
+
+    if len(players) < max_players:
+        players[manual_uid] = {"name": f"{player_name} (руч.)", "paid": False}
+        msg_res = f"Игрок *{escape_md(player_name)}* добавлен вручную в основной состав."
+    else:
+        reserve[manual_uid] = {"name": f"{player_name} (руч.)"}
+        msg_res = f"Основной состав полон. Игрок *{escape_md(player_name)}* добавлен вручную в резерв."
+
+    update_chat_data(chat_id, chat_data)
+    await update_group_announcement(bot, chat_id)
+
+    await message.answer(f"✅ {msg_res}", reply_markup=get_main_menu_keyboard())

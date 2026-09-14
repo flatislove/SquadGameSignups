@@ -4,7 +4,7 @@ def get_main_menu_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="📅 Создать игру", callback_data="menu_new_game")
     builder.button(text="💳 Управление оплатой", callback_data="menu_payments")
-    builder.button(text="📢 Управление анонсами", callback_data="menu_manage_announcements") # <--- Новая кнопка
+    builder.button(text="📢 Управление анонсами", callback_data="menu_manage_announcements")
     builder.adjust(1)
     return builder.as_markup()
 

@@ -8,6 +8,36 @@ from utils import escape_md, build_announcement_text, update_group_announcement
 
 router = Router()
 
+async def notify_admins_action(chat_id: str, action_text: str, user: types.User):
+    group_data = get_chat_data(chat_id)
+    group_title = group_data.get("group_title", f"Группа {chat_id}")
+    
+    username_str = f"@{user.username}" if user.username else "нет юзернейма"
+    msg = (
+        f"📢 *Log Event*\n"
+        f"Группа: *{escape_md(group_title)}*\n"
+        f"Действие: *{escape_md(action_text)}*\n\n"
+        f"👤 Имя: *{escape_md(user.full_name)}*\n"
+        f"🔗 Юзернейм: {username_str}\n"
+        f"🆔 Telegram ID: `{user.id}`"
+    )
+
+    try:
+        chat_admins = await bot.get_chat_administrators(int(chat_id))
+        for admin in chat_admins:
+            if admin.user.is_bot:
+                continue
+            try:
+                await bot.send_message(
+                    chat_id=admin.user.id,
+                    text=msg,
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"Failed to fetch chat admins for logging: {e}")
+
 @router.callback_query(lambda c: c.data == "signup")
 async def process_signup(callback: types.CallbackQuery):
     chat_id = str(callback.message.chat.id)
@@ -62,6 +92,7 @@ async def process_signup(callback: types.CallbackQuery):
                     print(f"Failed to send transfer request to user: {e}")
                 
                 status_text = "Вы выписаны. Бот уточняет у вас в ЛС насчет перевода денег."
+                await notify_admins_action(chat_id, "Отмена записи (оплачено, передача места резервисту)", user)
             else:
                 refund_pending[user_id] = pdata
                 del players[user_id]
@@ -87,6 +118,7 @@ async def process_signup(callback: types.CallbackQuery):
                     print(f"Failed to notify admins about refund: {e}")
 
                 status_text = "Вы выписаны. Администратор уведомлен о возврате оплаты."
+                await notify_admins_action(chat_id, "Отмена записи (оплачено, требуется возврат средств)", user)
         else:
             del players[user_id]
             if reserve:
@@ -95,25 +127,28 @@ async def process_signup(callback: types.CallbackQuery):
                 players[r_uid] = {"name": r_data["name"], "paid": False}
             update_chat_data(chat_id, chat_data)
             status_text = "Вы выписаны из списка участников."
+            await notify_admins_action(chat_id, "Отмена записи из основного состава", user)
 
     elif user_id in reserve:
         del reserve[user_id]
         update_chat_data(chat_id, chat_data)
         status_text = "Вы удалены из резерва."
+        await notify_admins_action(chat_id, "Отмена записи из резерва", user)
 
     else:
         if len(players) < max_players:
             was_paid = False
-            # Если игрок ранее отписался и висел в ожидании возврата — при повторной записи удаляем запрос на возврат у админа
             if user_id in refund_pending:
                 was_paid = True
                 del refund_pending[user_id]
                 
             players[user_id] = {"name": full_name, "paid": was_paid}
             status_text = "Вы успешно записались в основной состав!"
+            await notify_admins_action(chat_id, "Запись в основной состав", user)
         else:
             reserve[user_id] = {"name": full_name}
             status_text = "Мест нет, вы добавлены в Резерв!"
+            await notify_admins_action(chat_id, "Запись в резерв", user)
         update_chat_data(chat_id, chat_data)
     
     try:
@@ -158,6 +193,7 @@ async def process_transfer_confirmation(callback: types.CallbackQuery):
         await update_group_announcement(bot, chat_id)
         
         await callback.message.edit_text(f"✅ Спасибо! Место передано игроку *{escape_md(receiver_name)}* со статусом оплаты (🟩).", parse_mode="Markdown")
+        await notify_admins_action(chat_id, f"Подтвержден перевод денег за место от резервиста ({transfer_info['leaving_user_name']} -> {receiver_name})", callback.from_user)
     else:
         del paid_spot_transfers[leaving_uid]
         refund_pending[leaving_uid] = pdata
@@ -188,6 +224,7 @@ async def process_transfer_confirmation(callback: types.CallbackQuery):
             print(f"Failed to notify admins about failed transfer refund: {e}")
 
         await callback.message.edit_text("❌ Вы указали, что перевод не поступил. Администратор уведомлен о необходимости возврата.")
+        await notify_admins_action(chat_id, "Отказ от перевода средств резервистом (требуется возврат средств)", callback.from_user)
 
     await callback.answer()
 
@@ -213,6 +250,7 @@ async def process_refund_confirmation(callback: types.CallbackQuery):
         del refund_pending[target_uid]
         update_chat_data(chat_id, chat_data)
         await callback.message.edit_text(f"✅ Возврат для игрока подтвержден. Статус сброшен.")
+        await notify_admins_action(chat_id, f"Администратором подтвержден возврат денег игроку (ID: {target_uid})", callback.from_user)
     else:
         await callback.message.edit_text(f"ℹ️ Возврат по этому игроку уже был обработан ранее.")
         

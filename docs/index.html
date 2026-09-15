@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Запись на волейбол</title>
+    <title>Управление волейболом</title>
     <!-- Официальный скрипт Telegram Web App -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
@@ -20,7 +20,33 @@
         .container {
             width: 100%;
             max-width: 400px;
-            text-align: center;
+        }
+        .section {
+            display: none;
+            margin-bottom: 20px;
+        }
+        .section.active {
+            display: block;
+        }
+        .form-group {
+            margin-bottom: 12px;
+            text-align: left;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            color: gray;
+            margin-bottom: 4px;
+        }
+        select, input {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 15px;
+            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            color: inherit;
         }
         button {
             background-color: var(--tg-theme-button-color, #2481cc);
@@ -29,31 +55,252 @@
             border-radius: 8px;
             padding: 12px 20px;
             font-size: 16px;
+            font-width: bold;
             width: 100%;
             cursor: pointer;
-            margin-top: 20px;
+            margin-top: 15px;
         }
         .status-box {
             margin-top: 20px;
             padding: 15px;
             border-radius: 8px;
             background: rgba(0,0,0,0.05);
+            text-align: center;
+        }
+        .tab-switcher {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 8px;
+            background: var(--tg-theme-secondary-bg-color, #e0e0e0);
+            color: inherit;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 0;
+        }
+        .tab-btn.active {
+            background: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, #fff);
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>Волейбольный матч</h2>
-        <div id="user-info">Загрузка данных...</div>
-        
-        <div id="status-container" class="status-box" style="display: none;">
-            <p id="status-text"></p>
-            <p id="payment-text"></p>
+        <!-- Переключатель режимов (если пользователь админ, можно дать создание) -->
+        <div class="tab-switcher" id="tabSwitcher" style="display: none;">
+            <button class="tab-btn active" onclick="switchTab('signup')">Запись</button>
+            <button class="tab-btn" onclick="switchTab('create')">Создать анонс</button>
         </div>
 
-        <button id="action-btn" style="display: none;">Записаться</button>
+        <!-- СЕКЦИЯ 1: Запись на игру (для обычных игроков) -->
+        <div id="signupSection" class="section active">
+            <h2>Волейбольный матч</h2>
+            <div id="user-info">Загрузка данных...</div>
+            
+            <div id="status-container" class="status-box" style="display: none;">
+                <p id="status-text"></p>
+                <p id="payment-text"></p>
+            </div>
+
+            <button id="action-btn" style="display: none;">Записаться</button>
+        </div>
+
+        <!-- СЕКЦИЯ 2: Создание анонса (для организаторов/админов) -->
+        <div id="createSection" class="section">
+            <h2>🏐 Создать анонс</h2>
+            <form id="gameForm">
+                <div class="form-group">
+                    <label>Группа для публикации:</label>
+                    <select id="chatSelect" required>
+                        <option value="">Загрузка групп...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Дата игры:</label>
+                    <input type="date" id="gameDate" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Время начала:</label>
+                    <input type="time" id="startTime" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Время окончания:</label>
+                    <input type="time" id="endTime" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Название площадки:</label>
+                    <input type="text" id="locName" placeholder="Например, Школа №45" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Ссылка на карту:</label>
+                    <input type="url" id="locLink" placeholder="https://yandex.uz/maps/..." required>
+                </div>
+
+                <div class="form-group">
+                    <label>Стоимость с человека:</label>
+                    <input type="text" id="cost" placeholder="Например, 35000 сум" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Максимум игроков:</label>
+                    <input type="number" id="maxPlayers" value="12" min="2" max="30" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Имя организатора:</label>
+                    <input type="text" id="orgName" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Телефон для связи:</label>
+                    <input type="tel" id="orgPhone" placeholder="+998..." required>
+                </div>
+
+                <button type="submit">Опубликовать анонс</button>
+            </form>
+        </div>
     </div>
 
-    <script src="index.js"></script>
+    <!-- Основной скрипт логики приложения -->
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const user = tg.initDataUnsafe?.user || { id: 12345678, first_name: "Гость" };
+
+        function switchTab(tab) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            
+            if (tab === 'signup') {
+                document.getElementById('signupSection').classList.add('active');
+                event.target.classList.add('active');
+            } else {
+                document.getElementById('createSection').classList.add('active');
+                event.target.classList.add('active');
+                loadAdminChats();
+            }
+        }
+
+        // --- ЛОГИКА ЗАПИСИ ---
+        async function checkStatus() {
+            try {
+                const res = await fetch(`/api/user-status?user_id=${user.id}`);
+                const data = await res.json();
+                
+                document.getElementById('user-info').innerText = `Привет, ${user.first_name}!`;
+                
+                const statusBox = document.getElementById('status-container');
+                const statusText = document.getElementById('status-text');
+                const paymentText = document.getElementById('payment-text');
+                const actionBtn = document.getElementById('action-btn');
+
+                statusBox.style.display = 'block';
+                statusText.innerText = data.message;
+                paymentText.innerText = data.payment_text || '';
+
+                if (data.status === 'not_registered') {
+                    actionBtn.style.display = 'block';
+                    actionBtn.innerText = 'Записаться';
+                    actionBtn.onclick = signupUser;
+                } else {
+                    actionBtn.style.display = 'none';
+                }
+            } catch (e) {
+                document.getElementById('user-info').innerText = 'Ошибка загрузки статуса игры.';
+            }
+        }
+
+        async function signupUser() {
+            try {
+                const res = await fetch('/api/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: user.id })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    tg.showAlert("Вы успешно отправлены в список!");
+                    checkStatus();
+                }
+            } catch (e) {
+                tg.showAlert("Ошибка соединения");
+            }
+        }
+
+        // --- ЛОГИКА СОЗДАНИЯ АНОНСА ---
+        async function loadAdminChats() {
+            try {
+                const res = await fetch(`/api/admin-chats?user_id=${user.id}`);
+                const chats = await res.json();
+                const select = document.getElementById('chatSelect');
+                select.innerHTML = '';
+
+                if (chats.length === 0) {
+                    select.innerHTML = '<option value="">Нет доступных групп (нужны права админа)</option>';
+                    return;
+                }
+
+                chats.forEach(chat => {
+                    const opt = document.createElement('option');
+                    opt.value = chat.id;
+                    opt.textContent = chat.title;
+                    select.appendChild(opt);
+                });
+
+                // Если есть чаты, показываем вкладку создания
+                document.getElementById('tabSwitcher').style.display = 'flex';
+            } catch (e) {
+                console.error("Не удалось загрузить админ-чаты", e);
+            }
+        }
+
+        document.getElementById('gameForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = {
+                chat_id: document.getElementById('chatSelect').value,
+                date: document.getElementById('gameDate').value,
+                time: document.getElementById('startTime').value,
+                end_time: document.getElementById('endTime').value,
+                loc_name: document.getElementById('locName').value,
+                loc_link: document.getElementById('locLink').value,
+                cost: document.getElementById('cost').value,
+                max_players: document.getElementById('maxPlayers').value,
+                name: document.getElementById('orgName').value,
+                phone: document.getElementById('orgPhone').value
+            };
+
+            try {
+                const res = await fetch('/api/create-game', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                if (result.success) {
+                    tg.showAlert("✅ Анонс успешно опубликован в группу!");
+                    tg.close();
+                } else {
+                    tg.showAlert("❌ Ошибка при создании анонса");
+                }
+            } catch (e) {
+                tg.showAlert("❌ Ошибка соединения с сервером");
+            }
+        });
+
+        // Инициализация при открытии
+        checkStatus();
+        loadAdminChats(); // Проверяем сразу, показывать ли переключатель вкладок
+    </script>
 </body>
 </html>

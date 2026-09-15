@@ -7,16 +7,10 @@ import socketserver
 import sys
 import threading
 from urllib.parse import parse_qs, urlparse
-from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
-from handlers.game import (
-    DATE, TIME, END_TIME, LOC_NAME, LOC_LINK,
-    COST, PHONE, NAME, MAX_PLAYERS, PUB_TIME,
-    start_form, process_date, process_time, process_end_time,
-    process_loc_name, process_loc_link, process_cost, process_phone,
-    process_name, process_max_players, process_pub_time, cancel,
-    ACTIVE_GAMES
-)
+from handlers.game import ACTIVE_GAMES
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,6 +20,9 @@ logging.basicConfig(
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
+
+# Глобальная ссылка на приложение Telegram бота для использования в веб-сервере
+telegram_application = None
 
 def run_web_server():
     class WebAppHandler(http.server.SimpleHTTPRequestHandler):
@@ -70,6 +67,51 @@ def run_web_server():
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
+                return
+
+            # API: Получение списка групп, где пользователь является администратором
+            if path == "/api/admin-chats":
+                user_id = int(query.get("user_id", [0])[0])
+                admin_chats = []
+                
+                try:
+                    if telegram_application:
+                        loop = telegram_application.loop
+                        
+                        async def fetch_admin_chats():
+                            result = []
+                            # Проверяем все чаты, которые известны боту или сохранены
+                            chats_to_check = list(ACTIVE_GAMES.keys())
+                            # Если активных игр нет, можно попытаться вернуть базовый список или пустой
+                            for chat_id in chats_to_check:
+                                if chat_id == 0:
+                                    continue
+                                try:
+                                    member = await telegram_application.bot.get_chat_member(chat_id, user_id)
+                                    if member.status in ["creator", "administrator"]:
+                                        chat = await telegram_application.bot.get_chat(chat_id)
+                                        result.append({"id": chat_id, "title": chat.title or f"Группа {chat_id}"})
+                                except Exception:
+                                    pass
+                            return result
+
+                        future = asyncio.run_coroutine_threadsafe(fetch_admin_chats(), loop)
+                        admin_chats = future.result(timeout=5)
+                except Exception as e:
+                    logging.error(f"Ошибка получения админ-чатов: {e}")
+
+                # Если ничего не нашлось автоматически через Telegram API, даем заглушку или просим добавить бота
+                if not admin_chats:
+                    # Для удобства тестирования можно оставить чаты из ACTIVE_GAMES или дефолтный вариант
+                    admin_chats = [{"id": cid, "title": f"Волейбольный чат ({cid})"} for cid in ACTIVE_GAMES.keys() if cid != 0]
+                    if not admin_chats:
+                        admin_chats = [] # Пустой список стимулирует корректный вывод на фронтенде
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps(admin_chats, ensure_ascii=False).encode("utf-8"))
                 return
 
             return super().do_GET()
@@ -120,6 +162,73 @@ def run_web_server():
                     self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
                 return
 
+            # API: Создание игры через веб-форму в Web App
+            if parsed_path.path == "/api/create-game":
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length)
+                try:
+                    data = json.loads(body.decode("utf-8"))
+                    chat_id = int(data.get("chat_id", 0))
+                    
+                    game_data = {
+                        "date": data.get("date"),
+                        "time": data.get("time"),
+                        "end_time": data.get("end_time"),
+                        "loc_name": data.get("loc_name"),
+                        "loc_link": data.get("loc_link"),
+                        "cost": data.get("cost"),
+                        "phone": data.get("phone"),
+                        "name": data.get("name"),
+                        "max_players": int(data.get("max_players", 12))
+                    }
+
+                    # Сохраняем игру в память
+                    ACTIVE_GAMES[chat_id] = {
+                        "max_players": game_data["max_players"],
+                        "main_list": [],
+                        "reserve_list": [],
+                        "user_names": {},
+                        "payments": {},
+                        "game_info": game_data
+                    }
+
+                    # Ссылка на ваш Web App для управления записью
+                    web_app_url = "https://flatislove.github.io/SquadGameSignups/"
+                    keyboard = [[InlineKeyboardButton("🏐 Управлять записью", web_app=WebAppInfo(url=web_app_url))]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+
+                    announcement_text = (
+                        f"🏐 **Волейбольный матч!**\n\n"
+                        f"📅 **Дата:** {game_data['date']}\n"
+                        f"⏰ **Время:** {game_data['time']} - {game_data['end_time']}\n"
+                        f"📍 **Площадка:** {game_data['loc_name']}\n"
+                        f"🗺 [Ссылка на карту]({game_data['loc_link']})\n"
+                        f"💰 **Стоимость:** {game_data['cost']}\n"
+                        f"👥 **Максимум игроков:** {game_data['max_players']}\n"
+                        f"👤 **Организатор:** {game_data['name']} ({game_data['phone']})"
+                    )
+
+                    if telegram_application:
+                        async def send_msg():
+                            await telegram_application.bot.send_message(
+                                chat_id=chat_id,
+                                text=announcement_text,
+                                reply_markup=reply_markup,
+                                parse_mode="Markdown"
+                            )
+                        asyncio.run_coroutine_threadsafe(send_msg(), telegram_application.loop)
+
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+                except Exception as e:
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+                return
+
         def log_message(self, format, *args):
             pass
 
@@ -131,30 +240,14 @@ def run_web_server():
         logging.error(f"❌ Ошибка запуска веб-сервера: {e}")
 
 async def main_async():
+    global telegram_application
+
     if not BOT_TOKEN:
         logging.error("❌ Не задана переменная окружения BOT_TOKEN!")
         return
 
     application = Application.builder().token(BOT_TOKEN).build()
-
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("newgame", start_form)],
-        states={
-            DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_date)],
-            TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_time)],
-            END_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_end_time)],
-            LOC_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_loc_name)],
-            LOC_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_loc_link)],
-            COST: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_cost)],
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_phone)],
-            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_name)],
-            MAX_PLAYERS: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_max_players)],
-            PUB_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_pub_time)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
-    application.add_handler(conv_handler)
+    telegram_application = application
 
     logging.info("==> Бот запущен и готов к работе")
     

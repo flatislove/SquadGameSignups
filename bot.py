@@ -5,7 +5,6 @@ import asyncio
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
-from zoneinfo import ZoneInfo
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -15,14 +14,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Токен твоего бота (лучше подтягивать из переменных окружения, но можно указать и напрямую)
-TOKEN = "7916527503:AAH1V62yU8_r8a-i4Q2x5Kz3h6J1m8n9f0" # Замени на свой токен, если не используется os.environ
+# Токен вашего бота
+TOKEN = "7916527503:AAH1V62yU8_r8a-i4Q2x5Kz3h6J1m8n9f0"
 
-# Твоя жестко привязанная волейбольная группа
+# Жестко привязанная волейбольная группа
 MY_GROUP_ID = -1004349786806
 
 # Глобальное хранилище активных игр
-# Структура: { chat_id: { "max_players": 12, "main_list": [], "reserve_list": [], "game_info": {} } }
 ACTIVE_GAMES = {}
 
 telegram_application = None
@@ -48,46 +46,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def send_scheduled_announcement(context: ContextTypes.DEFAULT_TYPE):
-    """Фоновая задача для отправки отложенного анонса матча."""
-    job = context.job
-    data = job.data or {}
-    chat_id = job.chat_id
-    logger.info(f"[Scheduler] Сработал триггер отправки анонса для чата {chat_id}")
-    
-    text = (
-        f"🏐 **Волейбольный матч!**\n\n"
-        f"📅 **Дата:** {data.get('date', 'Уточняется')}\n"
-        f"⏰ **Время:** {data.get('time', '')} - {data.get('end_time', '')}\n"
-        f"📍 **Площадка:** {data.get('loc_name', 'Уточняется')}\n"
-        f"🗺 [Ссылка на карту]({data.get('loc_link', '#')})\n"
-        f"💰 **Стоимость:** {data.get('cost', 'Бесплатно')}\n"
-        f"👥 **Максимум игроков:** {data.get('max_players', 'Не указано')}\n"
-        f"👤 **Организатор:** {data.get('name', '')} ({data.get('phone', '')})"
-    )
-    
-    web_app_url = "https://squadgamesignups.onrender.com"
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                text="🏐 Управлять записью", 
-                web_app=WebAppInfo(url=web_app_url)
-            )
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    try:
-        await context.bot.send_message(
-            chat_id=chat_id, 
-            text=text, 
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        logger.error(f"[Scheduler Error] Не удалось отправить анонс в чат {chat_id}: {e}")
-
-
 # --- HTTP-сервер для API и Web App ---
 class WebAppAPIHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -103,7 +61,6 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
         if path == "/api/user-status":
             user_id = int(query.get("user_id", [0])[0])
             
-            # Ищем активную игру (берем первую попавшуюся или по умолчанию)
             game_data = ACTIVE_GAMES.get(MY_GROUP_ID)
             
             if not game_data:
@@ -169,7 +126,6 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(admin_chats, ensure_ascii=False).encode("utf-8"))
             return
 
-        # Для всех остальных путей вызываем стандартный метод раздачи файлов из папки docs
         return super().do_GET()
 
     def do_POST(self):
@@ -225,7 +181,6 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
                 "game_info": data
             }
 
-            # Отправляем анонс немедленно или планируем
             if telegram_application:
                 loop = telegram_application.loop
                 async def send_now():
@@ -287,6 +242,14 @@ def main():
     server_thread.start()
 
     logger.info("==> Бот запущен и готов к работе")
+    
+    # Корректная инициализация цикла событий для Python 3.14+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     telegram_application.run_polling()
 
 

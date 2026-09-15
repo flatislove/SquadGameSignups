@@ -2,6 +2,7 @@ import json
 import logging
 import threading
 import asyncio
+import os
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
@@ -14,8 +15,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Токен вашего бота
-TOKEN = "7916527503:AAH1V62yU8_r8a-i4Q2x5Kz3h6J1m8n9f0"
+# Получаем токен из переменной окружения Render (или подставляем пустую строку/заглушку для локалки)
+TOKEN = os.environ.get("BOT_TOKEN", "")
 
 # Жестко привязанная волейбольная группа
 MY_GROUP_ID = -1004349786806
@@ -231,6 +232,10 @@ def run_http_server():
 def main():
     global telegram_application
     
+    if not TOKEN:
+        logger.error("❌ Не найден токен бота! Убедитесь, что переменная окружения BOT_TOKEN установлена на Render.")
+        return
+
     # Инициализация бота
     telegram_application = Application.builder().token(TOKEN).build()
 

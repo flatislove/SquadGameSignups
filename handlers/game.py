@@ -1,7 +1,7 @@
 from datetime import datetime
 import logging
 from zoneinfo import ZoneInfo
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes, ConversationHandler
 
 # Состояния для опросника
@@ -13,6 +13,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 logger = logging.getLogger(__name__)
 
 async def start_form(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()  # Очищаем старые данные перед новым опросом
     await update.message.reply_text("Введите дату игры (например, 20.09.2026):")
     return DATE
 
@@ -70,11 +71,15 @@ async def process_pub_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         local_tz = ZoneInfo('Asia/Almaty')
         local_dt = datetime.strptime(pub_time_str, "%d.%m.%Y %H:%M").replace(tzinfo=local_tz)
         
-        # Используем встроенный в PTB планировщик (JobQueue)
+        # Копируем накопленные данные игры, чтобы передать их в фоновое задание
+        game_data = dict(context.user_data)
+        
+        # Планируем задачу и передаем в неё данные игры через аргумент data
         context.job_queue.run_once(
             send_scheduled_announcement,
             when=local_dt,
             chat_id=chat_id,
+            data=game_data,
             name=str(chat_id)
         )
         
@@ -93,5 +98,36 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def send_scheduled_announcement(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
+    data = job.data or {}
     logger.info(f"[Scheduler] Сработал триггер отправки анонса для чата {job.chat_id}")
-    await context.bot.send_message(chat_id=job.chat_id, text="📢 Внимание! Анонс запланированной игры.")
+    
+    # Формируем красивый текст анонса из собранных данных
+    text = (
+        f"🏐 **Волейбольный матч!**\n\n"
+        f"📅 **Дата:** {data.get('date', 'Уточняется')}\n"
+        f"⏰ **Время:** {data.get('time', '')} - {data.get('end_time', '')}\n"
+        f"📍 **Площадка:** {data.get('loc_name', 'Уточняется')}\n"
+        f"🗺 [Ссылка на карту]({data.get('loc_link', '#')})\n"
+        f"💰 **Стоимость:** {data.get('cost', 'Бесплатно')}\n"
+        f"👥 **Максимум игроков:** {data.get('max_players', 'Не указано')}\n"
+        f"👤 **Организатор:** {data.get('name', '')} ({data.get('phone', '')})"
+    )
+    
+    # Создаем инлайн-кнопку со ссылкой на ваш GitHub Pages Web App
+    web_app_url = "https://flatislove.github.io/SquadGameSignups/"
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="🏐 Управлять записью", 
+                web_app=WebAppInfo(url=web_app_url)
+            )
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await context.bot.send_message(
+        chat_id=job.chat_id, 
+        text=text, 
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )

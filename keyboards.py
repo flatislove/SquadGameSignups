@@ -1,4 +1,8 @@
+import os
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram import types
+
+WEB_APP_URL = os.getenv("WEB_APP_URL", "https://flatislove.github.io/SquadGameSignups/")
 
 def get_main_menu_keyboard():
     builder = InlineKeyboardBuilder()
@@ -8,9 +12,10 @@ def get_main_menu_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
-def get_match_keyboard():
+def get_match_keyboard(chat_id: str):
     builder = InlineKeyboardBuilder()
-    builder.button(text="📝 Записаться", callback_data="signup")
+    app_url = f"{WEB_APP_URL.rstrip('/')}/?chat_id={chat_id}"
+    builder.button(text="📋 Открыть запись", web_app=types.WebAppInfo(url=app_url))
     builder.adjust(1)
     return builder.as_markup()
 

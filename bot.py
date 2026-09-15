@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sys
@@ -19,15 +20,13 @@ logging.basicConfig(
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-def main():
+async def main_async():
     if not BOT_TOKEN:
         logging.error("❌ Не задана переменная окружения BOT_TOKEN!")
         return
 
-    # Инициализация приложения python-telegram-bot
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Настройка пошагового диалога (ConversationHandler)
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("newgame", start_form)],
         states={
@@ -49,8 +48,20 @@ def main():
 
     logging.info("==> Бот запущен и готов к работе")
     
-    # Запуск бота с очисткой вебхуков
-    application.run_polling(drop_pending_updates=True)
+    # Запускаем приложение через асинхронные методы инициализации и поллинга
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling(drop_pending_updates=True)
+    
+    # Держим приложение работающим
+    stop_event = asyncio.Event()
+    await stop_event.wait()
+
+def main():
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == "__main__":
     main()

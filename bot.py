@@ -2,10 +2,10 @@ import asyncio
 import logging
 import os
 import sys
+from zoneinfo import ZoneInfo
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from pytz import timezone
 
 from handlers.game import router as game_router
 
@@ -25,7 +25,7 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
     
-    scheduler = AsyncIOScheduler(timezone=timezone('Asia/Almaty'))
+    scheduler = AsyncIOScheduler(timezone=ZoneInfo('Asia/Almaty'))
     scheduler.start()
     
     dp.workflow_data.update(scheduler=scheduler)

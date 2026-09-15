@@ -1,102 +1,97 @@
 from datetime import datetime
 import logging
 from zoneinfo import ZoneInfo
-from aiogram import F, Router
-from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from telegram import Update
+from telegram.ext import ContextTypes, ConversationHandler
 
-from states import NewGameForm
+# Состояния для опросника
+(
+    DATE, TIME, END_TIME, LOC_NAME, LOC_LINK,
+    COST, PHONE, NAME, MAX_PLAYERS, PUB_TIME
+) = range(10)
 
-router = Router()
 logger = logging.getLogger(__name__)
 
-@router.message(F.text == "/newgame")
-async def start_form(message: Message, state: FSMContext):
-    await state.set_state(NewGameForm.date)
-    await message.answer("Введите дату игры (например, 20.09.2026):")
+async def start_form(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Введите дату игры (например, 20.09.2026):")
+    return DATE
 
-@router.message(NewGameForm.date)
-async def process_date(message: Message, state: FSMContext):
-    await state.update_data(date=message.text)
-    await state.set_state(NewGameForm.time)
-    await message.answer("Введите время начала (например, 19:00):")
+async def process_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['date'] = update.message.text
+    await update.message.reply_text("Введите время начала (например, 19:00):")
+    return TIME
 
-@router.message(NewGameForm.time)
-async def process_time(message: Message, state: FSMContext):
-    await state.update_data(time=message.text)
-    await state.set_state(NewGameForm.end_time)
-    await message.answer("Введите время окончания:")
+async def process_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['time'] = update.message.text
+    await update.message.reply_text("Введите время окончания:")
+    return END_TIME
 
-@router.message(NewGameForm.end_time)
-async def process_end_time(message: Message, state: FSMContext):
-    await state.update_data(end_time=message.text)
-    await state.set_state(NewGameForm.loc_name)
-    await message.answer("Введите название площадки:")
+async def process_end_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['end_time'] = update.message.text
+    await update.message.reply_text("Введите название площадки:")
+    return LOC_NAME
 
-@router.message(NewGameForm.loc_name)
-async def process_loc_name(message: Message, state: FSMContext):
-    await state.update_data(loc_name=message.text)
-    await state.set_state(NewGameForm.loc_link)
-    await message.answer("Введите ссылку на карту:")
+async def process_loc_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['loc_name'] = update.message.text
+    await update.message.reply_text("Введите ссылку на карту:")
+    return LOC_LINK
 
-@router.message(NewGameForm.loc_link)
-async def process_loc_link(message: Message, state: FSMContext):
-    await state.update_data(loc_link=message.text)
-    await state.set_state(NewGameForm.cost)
-    await message.answer("Введите стоимость:")
+async def process_loc_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['loc_link'] = update.message.text
+    await update.message.reply_text("Введите стоимость:")
+    return COST
 
-@router.message(NewGameForm.cost)
-async def process_cost(message: Message, state: FSMContext):
-    await state.update_data(cost=message.text)
-    await state.set_state(NewGameForm.phone)
-    await message.answer("Введите телефон для связи:")
+async def process_cost(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['cost'] = update.message.text
+    await update.message.reply_text("Введите телефон для связи:")
+    return PHONE
 
-@router.message(NewGameForm.phone)
-async def process_phone(message: Message, state: FSMContext):
-    await state.update_data(phone=message.text)
-    await state.set_state(NewGameForm.name)
-    await message.answer("Введите имя организатора:")
+async def process_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['phone'] = update.message.text
+    await update.message.reply_text("Введите имя организатора:")
+    return NAME
 
-@router.message(NewGameForm.name)
-async def process_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await state.set_state(NewGameForm.max_players)
-    await message.answer("Введите максимальное количество игроков:")
+async def process_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['name'] = update.message.text
+    await update.message.reply_text("Введите максимальное количество игроков:")
+    return MAX_PLAYERS
 
-@router.message(NewGameForm.max_players)
-async def process_max_players(message: Message, state: FSMContext):
-    await state.update_data(max_players=message.text)
-    await state.set_state(NewGameForm.pub_time)
-    await message.answer("Введите время публикации анонса (в формате ДД.ММ.ГГГГ ЧЧ:ММ):")
+async def process_max_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['max_players'] = update.message.text
+    await update.message.reply_text("Введите время публикации анонса (в формате ДД.ММ.ГГГГ ЧЧ:ММ):")
+    return PUB_TIME
 
-@router.message(NewGameForm.pub_time)
-async def process_pub_time(message: Message, state: FSMContext, scheduler: AsyncIOScheduler):
-    pub_time_str = message.text
+async def process_pub_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    pub_time_str = update.message.text
+    chat_id = update.effective_chat.id
     logger.info(f"[Form] Получено время публикации: {pub_time_str}")
     
     try:
         local_tz = ZoneInfo('Asia/Almaty')
         local_dt = datetime.strptime(pub_time_str, "%d.%m.%Y %H:%M").replace(tzinfo=local_tz)
-        utc_dt = local_dt.astimezone(ZoneInfo('UTC'))
         
-        scheduler.add_job(
+        # Используем встроенный в PTB планировщик (JobQueue)
+        context.job_queue.run_once(
             send_scheduled_announcement,
-            'date',
-            run_date=utc_dt,
-            args=[message.chat.id]
+            when=local_dt,
+            chat_id=chat_id,
+            name=str(chat_id)
         )
         
-        await message.answer("✅ Игра сохранена и анонс успешно запланирован!")
-        logger.info(f"[Scheduler] Задача успешно запланирована на {utc_dt} (UTC)")
+        await update.message.reply_text("✅ Игра сохранена и анонс успешно запланирован!")
+        logger.info(f"[Scheduler] Задача успешно запланирована на {local_dt}")
         
     except Exception as e:
         logger.error(f"[Scheduler Error] Ошибка планирования: {e}")
-        await message.answer("❌ Неверный формат даты/времени. Попробуйте еще раз в формате ДД.ММ.ГГГГ ЧЧ:ММ")
-        return
+        await update.message.reply_text("❌ Неверный формат даты/времени. Попробуйте заново через /newgame")
+        
+    return ConversationHandler.END
 
-    # ВАЖНО: всегда очищаем стейт в конце
-    await state.clear()
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("❌ Создание игры отменено.")
+    return ConversationHandler.END
 
-async def send_scheduled_announcement(chat_id: int):
-    logger.info(f"[Scheduler] Сработал триггер отправки анонса для чата {chat_id}")
+async def send_scheduled_announcement(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    logger.info(f"[Scheduler] Сработал триггер отправки анонса для чата {job.chat_id}")
+    await context.bot.send_message(chat_id=job.chat_id, text="📢 Внимание! Анонс запланированной игры.")

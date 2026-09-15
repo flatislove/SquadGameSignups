@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from aiogram import Router, types
 from aiogram.fsm.context import FSMContext
@@ -82,6 +83,7 @@ async def show_step(message_or_callback, state: FSMContext, step_idx: int, edit:
         await state.update_data(form_message_id=sent.message_id)
 
 async def send_custom_announcement(chat_id: str):
+    logging.info(f"[Scheduler] Сработала задача отправки анонса для чата {chat_id}")
     chat_data = get_chat_data(chat_id)
     chat_data["active_match"] = True
     chat_data["players"] = {}
@@ -91,6 +93,7 @@ async def send_custom_announcement(chat_id: str):
     update_chat_data(chat_id, chat_data)
     
     try:
+        logging.info(f"[Scheduler] Попытка отправить сообщение в чат {chat_id}")
         sent_msg = await bot.send_message(
             chat_id=int(chat_id),
             text=build_announcement_text(chat_data),
@@ -100,8 +103,9 @@ async def send_custom_announcement(chat_id: str):
         )
         chat_data["announcement_message_id"] = str(sent_msg.message_id)
         update_chat_data(chat_id, chat_data)
+        logging.info(f"[Scheduler] Анонс успешно опубликован в чат {chat_id}, message_id={sent_msg.message_id}")
     except Exception as e:
-        print(f"Failed to send scheduled announcement to {chat_id}: {e}")
+        logging.error(f"[Scheduler] Ошибка при отправке анонса в чат {chat_id}: {e}", exc_info=True)
 
 @router.callback_query(lambda c: c.data == "menu_new_game")
 async def menu_new_game_callback(callback: types.CallbackQuery, state: FSMContext):
@@ -231,6 +235,7 @@ async def process_form_input(message: types.Message, state: FSMContext):
             id=job_id,
             replace_existing=True
         )
+        logging.info(f"[Scheduler] Задача {job_id} успешно запланирована на {pub_dt_utc} (UTC)")
 
         form_msg_id = form_data.get("form_message_id")
         success_text = f"✅ Матч успешно запланирован к публикации на *{form_data['pub_time']}* для группы *{escape_md(form_data['group_title'])}*!"

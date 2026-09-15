@@ -15,21 +15,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Получаем токен из переменной окружения Render (или подставляем пустую строку/заглушку для локалки)
 TOKEN = os.environ.get("BOT_TOKEN", "")
-
-# Жестко привязанная волейбольная группа
 MY_GROUP_ID = -1004349786806
-
-# Глобальное хранилище активных игр
 ACTIVE_GAMES = {}
 
 telegram_application = None
+# Сохраняем глобально запущенный цикл событий, чтобы HTTP-сервер мог им пользоваться
+bot_loop = None
 
 
-# --- Telegram Команды ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Приветственная команда и открытие Web App"""
     web_app_url = "https://squadgamesignups.onrender.com"
     keyboard = [
         [
@@ -47,10 +42,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# --- HTTP-сервер для API и Web App ---
 class WebAppAPIHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        # Раздаем статические файлы из папки docs
         super().__init__(*args, directory="docs", **kwargs)
 
     def do_GET(self):
@@ -58,10 +51,8 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
         path = parsed_path.path
         query = parse_qs(parsed_path.query)
 
-        # API: Проверка статуса пользователя
         if path == "/api/user-status":
             user_id = int(query.get("user_id", [0])[0])
-            
             game_data = ACTIVE_GAMES.get(MY_GROUP_ID)
             
             if not game_data:
@@ -96,15 +87,12 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
             return
 
-        # API: Получение списка админ-чатов
         elif path == "/api/admin-chats":
             user_id = int(query.get("user_id", [0])[0])
             admin_chats = []
             
             try:
-                if telegram_application and MY_GROUP_ID != 0:
-                    loop = telegram_application.loop
-                    
+                if telegram_application and bot_loop and MY_GROUP_ID != 0:
                     async def check_admin():
                         try:
                             member = await telegram_application.bot.get_chat_member(MY_GROUP_ID, user_id)
@@ -115,7 +103,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
                             logger.error(f"Не удалось проверить админа в группе {MY_GROUP_ID}: {e}")
                         return []
 
-                    future = asyncio.run_coroutine_threadsafe(check_admin(), loop)
+                    future = asyncio.run_coroutine_threadsafe(check_admin(), bot_loop)
                     admin_chats = future.result(timeout=5)
             except Exception as e:
                 logger.error(f"Ошибка получения админ-чатов: {e}")
@@ -140,7 +128,6 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
         except Exception:
             data = {}
 
-        # API: Регистрация пользователя на игру
         if path == "/api/signup":
             user_id = data.get("user_id")
             success = False
@@ -165,7 +152,6 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
             return
 
-        # API: Создание игры / анонса из веб-формы
         elif path == "/api/create-game":
             chat_id = int(data.get("chat_id", MY_GROUP_ID))
             success = True
@@ -182,8 +168,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
                 "game_info": data
             }
 
-            if telegram_application:
-                loop = telegram_application.loop
+            if telegram_application and bot_loop:
                 async def send_now():
                     text = (
                         f"🏐 **Волейбольный матч!**\n\n"
@@ -201,7 +186,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
                         chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
                     )
 
-                asyncio.run_coroutine_threadsafe(send_now(), loop)
+                asyncio.run_coroutine_threadsafe(send_now(), bot_loop)
 
             response = {"success": success}
             self.send_response(200)
@@ -214,7 +199,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
-    def do_OPTIONS(self):
+    def do_OPTIONS(self, *args, **kwargs):
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -230,30 +215,25 @@ def run_http_server():
 
 
 def main():
-    global telegram_application
+    global telegram_application, bot_loop
     
     if not TOKEN:
         logger.error("❌ Не найден токен бота! Убедитесь, что переменная окружения BOT_TOKEN установлена на Render.")
         return
 
-    # Инициализация бота
     telegram_application = Application.builder().token(TOKEN).build()
-
-    # Регистрация команд
     telegram_application.add_handler(CommandHandler("start", start))
 
-    # Запуск HTTP-сервера в отдельном потоке
     server_thread = threading.Thread(target=run_http_server, daemon=True)
     server_thread.start()
 
     logger.info("==> Бот запущен и готов к работе")
     
-    # Корректная инициализация цикла событий для Python 3.14+
     try:
-        loop = asyncio.get_running_loop()
+        bot_loop = asyncio.get_running_loop()
     except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        bot_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(bot_loop)
 
     telegram_application.run_polling()
 

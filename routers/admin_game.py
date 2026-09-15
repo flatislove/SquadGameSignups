@@ -31,6 +31,9 @@ FORM_STEPS = [
     (NewGameForm.waiting_for_pub_time, "🚀 Введите время публикации анонса (формат: ДД.ММ.ГГГГ ЧЧ:ММ, например, 18.09.2026 12:00):")
 ]
 
+FORM_KEYS = ["date", "time", "end_time", "loc_name", "loc_link", "cost", "phone", "name", "max_players", "pub_time"]
+FORM_LABELS = ["Дата", "Начало", "Конец", "Место", "Ссылка", "Цена", "Телефон", "Получатель", "Максимум", "Публикация"]
+
 async def show_step(message_or_callback, state: FSMContext, step_idx: int, edit: bool = True):
     await state.update_data(current_step=step_idx)
     state_to_set, prompt_text = FORM_STEPS[step_idx]
@@ -40,13 +43,11 @@ async def show_step(message_or_callback, state: FSMContext, step_idx: int, edit:
     group_title = data.get("group_title", "Группа")
 
     filled_info = f"🛠 Создание матча для: *{escape_md(group_title)}*\n\n"
-    keys = ["date", "time", "end_time", "loc_name", "loc_link", "cost", "phone", "name", "max_players"]
-    labels = ["Дата", "Начало", "Конец", "Место", "Ссылка", "Цена", "Телефон", "Получатель", "Максимум"]
     
     for i in range(step_idx):
-        val = data.get(keys[i])
+        val = data.get(FORM_KEYS[i])
         if val:
-            filled_info += f"▫️ {labels[i]}: {escape_md(str(val))}\n"
+            filled_info += f"▫️ {FORM_LABELS[i]}: {escape_md(str(val))}\n"
 
     filled_info += f"\n*{prompt_text}*"
 
@@ -162,8 +163,7 @@ async def process_form_back(callback: types.CallbackQuery, state: FSMContext):
 async def process_form_forward(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     current_step = data.get("current_step", 0)
-    keys = ["date", "time", "end_time", "loc_name", "loc_link", "cost", "phone", "name", "max_players", "pub_time"]
-    if current_step < len(FORM_STEPS) - 1 and data.get(keys[current_step]):
+    if current_step < len(FORM_STEPS) - 1 and data.get(FORM_KEYS[current_step]):
         await show_step(callback, state, current_step + 1)
     else:
         await callback.answer("Сначала заполни текущее поле!", show_alert=True)
@@ -183,9 +183,7 @@ async def process_form_input(message: types.Message, state: FSMContext):
     current_step = data.get("current_step", 0)
     text = message.text.strip()
 
-    keys = ["date", "time", "end_time", "loc_name", "loc_link", "cost", "phone", "name", "max_players", "pub_time"]
-    
-    logging.info(f"[Form] Получен ввод для шага {current_step} ({keys[current_step]}): '{text}'")
+    logging.info(f"[Form] Получен ввод для шага {current_step} ({FORM_KEYS[current_step]}): '{text}'")
 
     if current_step == 8 and not text.isdigit():
         logging.warning(f"[Form] Шаг 8 (max_players): введено не число '{text}'")
@@ -195,7 +193,7 @@ async def process_form_input(message: types.Message, state: FSMContext):
             pass
         return
 
-    await state.update_data({keys[current_step]: text})
+    await state.update_data({FORM_KEYS[current_step]: text})
 
     if current_step < len(FORM_STEPS) - 1:
         logging.info(f"[Form] Переход к следующему шагу: {current_step + 1}")

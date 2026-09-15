@@ -81,7 +81,7 @@ async def show_step(message_or_callback, state: FSMContext, step_idx: int, edit:
         sent = await message_or_callback.answer(filled_info, parse_mode="Markdown", reply_markup=kb.as_markup())
         await state.update_data(form_message_id=sent.message_id)
 
-async def send_custom_announcement(bot_instance, chat_id: str):
+async def send_custom_announcement(chat_id: str):
     chat_data = get_chat_data(chat_id)
     chat_data["active_match"] = True
     chat_data["players"] = {}
@@ -91,7 +91,7 @@ async def send_custom_announcement(bot_instance, chat_id: str):
     update_chat_data(chat_id, chat_data)
     
     try:
-        sent_msg = await bot_instance.send_message(
+        sent_msg = await bot.send_message(
             chat_id=int(chat_id),
             text=build_announcement_text(chat_data),
             parse_mode="Markdown",
@@ -227,7 +227,7 @@ async def process_form_input(message: types.Message, state: FSMContext):
             send_custom_announcement,
             "date",
             run_date=pub_dt_utc,
-            args=[bot, chat_id],
+            args=[chat_id],
             id=job_id,
             replace_existing=True
         )

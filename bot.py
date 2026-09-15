@@ -1,7 +1,10 @@
 import asyncio
+import http.server
 import logging
 import os
+import socketserver
 import sys
+import threading
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
 
 from handlers.game import (
@@ -19,6 +22,26 @@ logging.basicConfig(
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.getenv("PORT", "10000"))
+
+# Запускаем простейший HTTP-сервер в фоновом потоке, чтобы Render видел открытый порт
+def run_dummy_server():
+    class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Bot is alive!")
+        
+        def log_message(self, format, *args):
+            # Отключаем лишний лог HTTP-запросов, чтобы не засорять консоль
+            pass
+
+    try:
+        with socketserver.TCPServer(("", PORT), HealthCheckHandler) as httpd:
+            logging.info(f"==> HTTP-сервер запущен на порту {PORT}")
+            httpd.serve_forever()
+    except Exception as e:
+        logging.error(f"❌ Ошибка запуска HTTP-сервера: {e}")
 
 async def main_async():
     if not BOT_TOKEN:
@@ -48,16 +71,19 @@ async def main_async():
 
     logging.info("==> Бот запущен и готов к работе")
     
-    # Запускаем приложение через асинхронные методы инициализации и поллинга
     await application.initialize()
     await application.start()
     await application.updater.start_polling(drop_pending_updates=True)
     
-    # Держим приложение работающим
     stop_event = asyncio.Event()
     await stop_event.wait()
 
 def main():
+    # Запускаем веб-сервер для Render в отдельном потоке
+    server_thread = threading.Thread(target=run_dummy_server, daemon=True)
+    server_thread.start()
+
+    # Запускаем бота в главном потоке через Python 3.14 совместимый asyncio.run
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:

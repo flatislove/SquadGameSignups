@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import sys
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -14,9 +15,13 @@ logging.basicConfig(
     stream=sys.stdout
 )
 
-BOT_TOKEN = "ВАШ_ТОКЕН_БОТА"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 async def main():
+    if not BOT_TOKEN:
+        logging.error("❌ Не задана переменная окружения BOT_TOKEN!")
+        return
+
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
     

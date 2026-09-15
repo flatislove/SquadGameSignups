@@ -1,10 +1,10 @@
 from datetime import datetime
 import logging
+from zoneinfo import ZoneInfo
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from pytz import timezone
 
 from states import NewGameForm
 
@@ -76,9 +76,9 @@ async def process_pub_time(message: Message, state: FSMContext, scheduler: Async
     logger.info(f"[Form] Получено время публикации: {pub_time_str}")
     
     try:
-        local_tz = timezone('Asia/Almaty')
-        local_dt = local_tz.localize(datetime.strptime(pub_time_str, "%d.%m.%Y %H:%M"))
-        utc_dt = local_dt.astimezone(timezone('UTC'))
+        local_tz = ZoneInfo('Asia/Almaty')
+        local_dt = datetime.strptime(pub_time_str, "%d.%m.%Y %H:%M").replace(tzinfo=local_tz)
+        utc_dt = local_dt.astimezone(ZoneInfo('UTC'))
         
         scheduler.add_job(
             send_scheduled_announcement,

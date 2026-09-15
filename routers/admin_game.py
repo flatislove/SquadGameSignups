@@ -96,7 +96,7 @@ async def send_custom_announcement(bot_instance, chat_id: str):
             text=build_announcement_text(chat_data),
             parse_mode="Markdown",
             link_preview_options=types.LinkPreviewOptions(is_disabled=True),
-            reply_markup=get_match_keyboard()
+            reply_markup=get_match_keyboard(chat_id)
         )
         chat_data["announcement_message_id"] = str(sent_msg.message_id)
         update_chat_data(chat_id, chat_data)
@@ -454,7 +454,6 @@ async def admin_delete_player_action(callback: types.CallbackQuery):
     update_chat_data(chat_id, chat_data)
     await update_group_announcement(bot, chat_id)
 
-    # Исправлено: отправка уведомления самому игроку, если его uid является числовым Telegram ID
     if is_paid and str(uid).isdigit():
         try:
             await bot.send_message(

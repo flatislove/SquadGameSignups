@@ -185,7 +185,10 @@ async def process_form_input(message: types.Message, state: FSMContext):
 
     keys = ["date", "time", "end_time", "loc_name", "loc_link", "cost", "phone", "name", "max_players", "pub_time"]
     
+    logging.info(f"[Form] Получен ввод для шага {current_step} ({keys[current_step]}): '{text}'")
+
     if current_step == 8 and not text.isdigit():
+        logging.warning(f"[Form] Шаг 8 (max_players): введено не число '{text}'")
         try:
             await message.delete()
         except Exception:
@@ -195,16 +198,22 @@ async def process_form_input(message: types.Message, state: FSMContext):
     await state.update_data({keys[current_step]: text})
 
     if current_step < len(FORM_STEPS) - 1:
+        logging.info(f"[Form] Переход к следующему шагу: {current_step + 1}")
         await show_step(message, state, current_step + 1, edit=False)
     else:
+        logging.info("[Form] Достигнут последний шаг (время публикации). Начинаем сохранение и планирование.")
         form_data = await state.get_data()
         await state.clear()
 
         try:
-            pub_dt_local = datetime.strptime(form_data["pub_time"].strip(), "%d.%m.%Y %H:%M")
+            pub_time_str = form_data["pub_time"].strip()
+            logging.info(f"[Scheduler] Попытка распарсить время публикации: '{pub_time_str}'")
+            pub_dt_local = datetime.strptime(pub_time_str, "%d.%m.%Y %H:%M")
             pub_dt_local = pub_dt_local.replace(tzinfo=LOCAL_TZ)
             pub_dt_utc = pub_dt_local.astimezone(timezone.utc)
-        except ValueError:
+            logging.info(f"[Scheduler] Успешно распарсено. Локально: {pub_dt_local}, UTC: {pub_dt_utc}")
+        except ValueError as e:
+            logging.error(f"[Scheduler] Ошибка парсинга времени публикации '{form_data.get('pub_time')}': {e}")
             await message.answer("⚠️ Неверный формат даты публикации! Используйте ДД.ММ.ГГГГ ЧЧ:ММ. Нажмите «Создать игру» снова.")
             return
 

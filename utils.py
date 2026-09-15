@@ -26,7 +26,6 @@ def build_announcement_text(chat_data: dict):
         safe_name = escape_md(full_name)
         username = pdata.get("username")
         
-        # Если передан username, выводим ссылку на профиль через t.me
         if username:
             clean_username = username.lstrip("@")
             user_link = f"[{safe_name}](https://t.me/{clean_username})"
@@ -98,7 +97,7 @@ async def update_group_announcement(bot, chat_id: str):
             text=build_announcement_text(chat_data),
             parse_mode="Markdown",
             link_preview_options=types.LinkPreviewOptions(is_disabled=True),
-            reply_markup=get_match_keyboard()
+            reply_markup=get_match_keyboard(chat_id)
         )
     except Exception as e:
         print(f"Failed to update group announcement: {e}")

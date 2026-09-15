@@ -12,6 +12,9 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 logger = logging.getLogger(__name__)
 
+# Глобальное хранилище активных игр (используется bot.py для API эндпоинтов)
+ACTIVE_GAMES = {}
+
 async def start_form(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()  # Очищаем старые данные перед новым опросом
     await update.message.reply_text("Введите дату игры (например, 20.09.2026):")
@@ -74,6 +77,21 @@ async def process_pub_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         # Копируем накопленные данные игры, чтобы передать их в фоновое задание
         game_data = dict(context.user_data)
         
+        # Инициализируем структуру игры в ACTIVE_GAMES для API бэкенда на Render
+        try:
+            max_p = int(game_data.get('max_players', 12))
+        except ValueError:
+            max_p = 12
+
+        ACTIVE_GAMES[chat_id] = {
+            "max_players": max_p,
+            "main_list": [],
+            "reserve_list": [],
+            "user_names": {},
+            "payments": {},
+            "game_info": game_data
+        }
+        
         # Планируем задачу и передаем в неё данные игры через аргумент data
         context.job_queue.run_once(
             send_scheduled_announcement,
@@ -113,8 +131,8 @@ async def send_scheduled_announcement(context: ContextTypes.DEFAULT_TYPE):
         f"👤 **Организатор:** {data.get('name', '')} ({data.get('phone', '')})"
     )
     
-    # Создаем инлайн-кнопку со ссылкой на ваш GitHub Pages Web App
-    web_app_url = "https://flatislove.github.io/SquadGameSignups/"
+    # Ссылка на ваш Web App на Render
+    web_app_url = "https://squadgamesignups.onrender.com"
     keyboard = [
         [
             InlineKeyboardButton(

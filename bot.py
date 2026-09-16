@@ -117,12 +117,26 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             return
 
         # API: Эндпоинт для Cron-запросов
-        elif path == "/api/ping":
+        elif path == "/api/cron":
             logger.info("==> Получен запрос от Cron-планировщика")
             
             response = {
                 "status": "success",
                 "message": "Cron task executed successfully",
+                "timestamp": datetime.now().isoformat()
+            }
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
+            return
+
+        # API: Пинг-эндпоинт
+        elif path == "/ping":
+            response = {
+                "status": "alive",
                 "timestamp": datetime.now().isoformat()
             }
 

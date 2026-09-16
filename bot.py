@@ -20,7 +20,6 @@ MY_GROUP_ID = -1004349786806
 ACTIVE_GAMES = {}
 
 telegram_application = None
-# Сохраняем глобально запущенный цикл событий, чтобы HTTP-сервер мог им пользоваться
 bot_loop = None
 
 
@@ -51,6 +50,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
         path = parsed_path.path
         query = parse_qs(parsed_path.query)
 
+        # API: Проверка статуса пользователя
         if path == "/api/user-status":
             user_id = int(query.get("user_id", [0])[0])
             game_data = ACTIVE_GAMES.get(MY_GROUP_ID)
@@ -87,6 +87,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
             return
 
+        # API: Получение списка админ-чатов
         elif path == "/api/admin-chats":
             user_id = int(query.get("user_id", [0])[0])
             admin_chats = []
@@ -115,6 +116,23 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(admin_chats, ensure_ascii=False).encode("utf-8"))
             return
 
+        # API: Эндпоинт для Cron-запросов
+        elif path == "/api/ping":
+            logger.info("==> Получен запрос от Cron-планировщика")
+            
+            response = {
+                "status": "success",
+                "message": "Cron task executed successfully",
+                "timestamp": datetime.now().isoformat()
+            }
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
+            return
+
         return super().do_GET()
 
     def do_POST(self):
@@ -128,6 +146,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
         except Exception:
             data = {}
 
+        # API: Регистрация пользователя на игру
         if path == "/api/signup":
             user_id = data.get("user_id")
             success = False
@@ -152,6 +171,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
             return
 
+        # API: Создание игры / анонса из веб-формы
         elif path == "/api/create-game":
             chat_id = int(data.get("chat_id", MY_GROUP_ID))
             success = True

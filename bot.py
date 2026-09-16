@@ -9,7 +9,7 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Настройка логирования
+# Настройка подробного логирования
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
@@ -49,8 +49,8 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
         parsed_path = urlparse(self.path)
         path = parsed_path.path
         query = parse_qs(parsed_path.query)
+        logger.info(f"🌐 GET запрос: {path} | Параметры: {query}")
 
-        # API: Проверка статуса пользователя
         if path == "/api/user-status":
             user_id = int(query.get("user_id", [0])[0])
             game_data = ACTIVE_GAMES.get(MY_GROUP_ID)
@@ -87,7 +87,6 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
             return
 
-        # API: Получение списка админ-чатов
         elif path == "/api/admin-chats":
             user_id = int(query.get("user_id", [0])[0])
             admin_chats = []
@@ -116,30 +115,8 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(admin_chats, ensure_ascii=False).encode("utf-8"))
             return
 
-        # API: Эндпоинт для Cron-запросов
-        elif path == "/api/cron":
-            logger.info("==> Получен запрос от Cron-планировщика")
-            
-            response = {
-                "status": "success",
-                "message": "Cron task executed successfully",
-                "timestamp": datetime.now().isoformat()
-            }
-
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
-            return
-
-        # API: Пинг-эндпоинт
         elif path == "/ping":
-            response = {
-                "status": "alive",
-                "timestamp": datetime.now().isoformat()
-            }
-
+            response = {"status": "alive", "timestamp": datetime.now().isoformat()}
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -155,12 +132,15 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length)
         
+        logger.info(f"📥 POST запрос на {path}")
+        logger.info(f"📦 Тело запроса (Raw Body): {body.decode('utf-8', errors='ignore')}")
+
         try:
             data = json.loads(body.decode('utf-8'))
-        except Exception:
+        except Exception as e:
+            logger.error(f"❌ Ошибка разбора JSON в POST-запросе: {e}")
             data = {}
 
-        # API: Регистрация пользователя на игру
         if path == "/api/signup":
             user_id = data.get("user_id")
             success = False
@@ -185,7 +165,6 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
             return
 
-        # API: Создание игры / анонса из веб-формы
         elif path == "/api/create-game":
             chat_id = int(data.get("chat_id", MY_GROUP_ID))
             success = True
@@ -204,23 +183,36 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
 
             if telegram_application and bot_loop:
                 async def send_now():
-                    text = (
-                        f"🏐 **Волейбольный матч!**\n\n"
-                        f"📅 **Дата:** {data.get('date', 'Уточняется')}\n"
-                        f"⏰ **Время:** {data.get('time', '')} - {data.get('end_time', '')}\n"
-                        f"📍 **Площадка:** {data.get('loc_name', 'Уточняется')}\n"
-                        f"🗺 [Ссылка на карту]({data.get('loc_link', '#')})\n"
-                        f"💰 **Стоимость:** {data.get('cost', 'Бесплатно')}\n"
-                        f"👥 **Максимум игроков:** {data.get('max_players', 'Не указано')}\n"
-                        f"👤 **Организатор:** {data.get('name', '')} ({data.get('phone', '')})"
-                    )
-                    web_app_url = "https://squadgamesignups.onrender.com"
-                    keyboard = [[InlineKeyboardButton(text="🏐 Управлять записью", web_app=WebAppInfo(url=web_app_url))]]
-                    await telegram_application.bot.send_message(
-                        chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
-                    )
+                    try:
+                        publish_time = data.get('publish_time', 'Сразу')
+                        logger.info(f"🚀 Попытка отправки анонса в чат {chat_id}. Время публикации: {publish_time}")
+                        
+                        text = (
+                            f"🏐 **Волейбольный матч!**\n\n"
+                            f"📅 **Дата:** {data.get('date', 'Уточняется')}\n"
+                            f"⏰ **Время:** {data.get('time', '')} - {data.get('end_time', '')}\n"
+                            f"📍 **Площадка:** {data.get('loc_name', 'Уточняется')}\n"
+                            f"🗺 [Ссылка на карту]({data.get('loc_link', '#')})\n"
+                            f"💰 **Стоимость:** {data.get('cost', 'Бесплатно')}\n"
+                            f"👥 **Максимум игроков:** {data.get('max_players', 'Не указано')}\n"
+                            f"👤 **Организатор:** {data.get('name', '')} ({data.get('phone', '')})"
+                        )
+                        web_app_url = "https://squadgamesignups.onrender.com"
+                        keyboard = [[InlineKeyboardButton(text="🏐 Управлять записью", web_app=WebAppInfo(url=web_app_url))]]
+                        
+                        msg = await telegram_application.bot.send_message(
+                            chat_id=chat_id, 
+                            text=text, 
+                            reply_markup=InlineKeyboardMarkup(keyboard), 
+                            parse_mode="Markdown"
+                        )
+                        logger.info(f"✅ УСПЕХ! Анонс отправлен. Message ID: {msg.message_id}")
+                    except Exception as e:
+                        logger.exception(f"❌ КРИТИЧЕСКАЯ ОШИБКА при отправке сообщения в Telegram:")
 
                 asyncio.run_coroutine_threadsafe(send_now(), bot_loop)
+            else:
+                logger.error("❌ Невозможно отправить сообщение: telegram_application или bot_loop не инициализированы!")
 
             response = {"success": success}
             self.send_response(200)

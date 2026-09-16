@@ -128,6 +128,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 date: document.getElementById('gameDate').value,
                 time: document.getElementById('startTime').value,
                 end_time: document.getElementById('endTime').value,
+                publish_time: document.getElementById('publishTime') ? document.getElementById('publishTime').value : 'now', // Передаем время публикации
                 loc_name: document.getElementById('locName').value,
                 loc_link: document.getElementById('locLink').value,
                 cost: document.getElementById('cost').value,
@@ -145,8 +146,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 const result = await response.json();
                 
                 if (result.success) {
-                    tg.showAlert("✅ Анонс успешно опубликован в группу!");
-                    tg.close();
+                    tg.showAlert("✅ Анонс успешно отправлен на сервер!");
+                    // Убрали tg.close(), чтобы приложение не закрывалось моментально, позволяя увидеть результат
                 } else {
                     tg.showAlert("❌ Ошибка при создании анонса.");
                 }

@@ -55,7 +55,7 @@
             border-radius: 8px;
             padding: 12px 20px;
             font-size: 16px;
-            font-width: bold;
+            font-weight: bold;
             width: 100%;
             cursor: pointer;
             margin-top: 15px;
@@ -91,13 +91,13 @@
 </head>
 <body>
     <div class="container">
-        <!-- Переключатель режимов (если пользователь админ, можно дать создание) -->
+        <!-- Переключатель режимов -->
         <div class="tab-switcher" id="tabSwitcher" style="display: none;">
-            <button class="tab-btn active" onclick="switchTab('signup')">Запись</button>
-            <button class="tab-btn" onclick="switchTab('create')">Создать анонс</button>
+            <button class="tab-btn active" onclick="switchTab('signup', event)">Запись</button>
+            <button class="tab-btn" onclick="switchTab('create', event)">Создать анонс</button>
         </div>
 
-        <!-- СЕКЦИЯ 1: Запись на игру (для обычных игроков) -->
+        <!-- СЕКЦИЯ 1: Запись на игру -->
         <div id="signupSection" class="section active">
             <h2>Волейбольный матч</h2>
             <div id="user-info">Загрузка данных...</div>
@@ -110,7 +110,7 @@
             <button id="action-btn" style="display: none;">Записаться</button>
         </div>
 
-        <!-- СЕКЦИЯ 2: Создание анонса (для организаторов/админов) -->
+        <!-- СЕКЦИЯ 2: Создание анонса -->
         <div id="createSection" class="section">
             <h2>🏐 Создать анонс</h2>
             <form id="gameForm">
@@ -134,6 +134,16 @@
                 <div class="form-group">
                     <label>Время окончания:</label>
                     <input type="time" id="endTime" required>
+                </div>
+
+                <!-- Добавлено поле выбора времени публикации -->
+                <div class="form-group">
+                    <label>Время публикации анонса:</label>
+                    <select id="publishTime" required>
+                        <option value="now">Опубликовать сразу</option>
+                        <option value="1h">За 1 час до матча (через Cron)</option>
+                        <option value="morning">Утром в день игры (через Cron)</option>
+                    </select>
                 </div>
 
                 <div class="form-group">
@@ -171,28 +181,26 @@
         </div>
     </div>
 
-    <!-- Основной скрипт логики приложения -->
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        const user = tg.initDataUnsafe?.user || { id: 12345678, first_name: "Гость" };
+        const user = tg.initDataUnsafe?.user || { id: 6653905750, first_name: "Влад" };
 
-        function switchTab(tab) {
+        function switchTab(tab, evt) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             
             if (tab === 'signup') {
                 document.getElementById('signupSection').classList.add('active');
-                event.target.classList.add('active');
+                evt.target.classList.add('active');
             } else {
                 document.getElementById('createSection').classList.add('active');
-                event.target.classList.add('active');
+                evt.target.classList.add('active');
                 loadAdminChats();
             }
         }
 
-        // --- ЛОГИКА ЗАПИСИ ---
         async function checkStatus() {
             try {
                 const res = await fetch(`/api/user-status?user_id=${user.id}`);
@@ -230,7 +238,7 @@
                 });
                 const result = await res.json();
                 if (result.success) {
-                    tg.showAlert("Вы успешно отправлены в список!");
+                    tg.showAlert("Вы успешно записаны!");
                     checkStatus();
                 }
             } catch (e) {
@@ -238,7 +246,6 @@
             }
         }
 
-        // --- ЛОГИКА СОЗДАНИЯ АНОНСА ---
         async function loadAdminChats() {
             try {
                 const res = await fetch(`/api/admin-chats?user_id=${user.id}`);
@@ -258,7 +265,6 @@
                     select.appendChild(opt);
                 });
 
-                // Если есть чаты, показываем вкладку создания
                 document.getElementById('tabSwitcher').style.display = 'flex';
             } catch (e) {
                 console.error("Не удалось загрузить админ-чаты", e);
@@ -272,6 +278,7 @@
                 date: document.getElementById('gameDate').value,
                 time: document.getElementById('startTime').value,
                 end_time: document.getElementById('endTime').value,
+                publish_time: document.getElementById('publishTime').value, // Передаем время публикации
                 loc_name: document.getElementById('locName').value,
                 loc_link: document.getElementById('locLink').value,
                 cost: document.getElementById('cost').value,
@@ -288,8 +295,8 @@
                 });
                 const result = await res.json();
                 if (result.success) {
-                    tg.showAlert("✅ Анонс успешно опубликован в группу!");
-                    tg.close();
+                    tg.showAlert("✅ Запрос на создание анонса отправлен на сервер!");
+                    // Убрали tg.close(), чтобы приложение не закрывалось мгновенно и вы видели статус
                 } else {
                     tg.showAlert("❌ Ошибка при создании анонса");
                 }
@@ -298,9 +305,8 @@
             }
         });
 
-        // Инициализация при открытии
         checkStatus();
-        loadAdminChats(); // Проверяем сразу, показывать ли переключатель вкладок
+        loadAdminChats();
     </script>
 </body>
 </html>

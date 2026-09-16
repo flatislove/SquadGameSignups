@@ -25,6 +25,8 @@ bot_loop = None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     web_app_url = "https://squadgamesignups.onrender.com"
+    
+    # Исправленное создание кнопки Web App для предотвращения ошибки Button_type_invalid
     keyboard = [
         [
             InlineKeyboardButton(

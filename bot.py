@@ -7,9 +7,9 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, filters
 
-# Настройка подробного логирования
+# Настройка максимально подробного логирования
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
@@ -24,9 +24,14 @@ bot_loop = None
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    web_app_url = "https://squadgamesignups.onrender.com"
+    chat_type = update.effective_chat.type
+    logger.info(f"🤖 Получена команда /start из чата типа: {chat_type} (ID: {update.effective_chat.id})")
     
-    # Исправленное создание кнопки Web App для предотвращения ошибки Button_type_invalid
+    if chat_type != "private":
+        logger.info("🚫 Команда /start вызвана в группе — игнорируем отправку Web App кнопки.")
+        return
+
+    web_app_url = "https://squadgamesignups.onrender.com"
     keyboard = [
         [
             InlineKeyboardButton(
@@ -41,6 +46,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Привет! Нажми на кнопку ниже, чтобы открыть мини-приложение для записи на волейбол или создания анонсов:",
         reply_markup=reply_markup
     )
+    logger.info("✅ Приветственное сообщение с Web App кнопкой успешно отправлено в ЛС.")
 
 
 class WebAppAPIHandler(SimpleHTTPRequestHandler):
@@ -51,7 +57,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
         parsed_path = urlparse(self.path)
         path = parsed_path.path
         query = parse_qs(parsed_path.query)
-        logger.info(f"🌐 GET запрос: {path} | Параметры: {query}")
+        logger.info(f"🌐 [GET] Входящий запрос -> Путь: {path} | Параметры: {query}")
 
         if path == "/api/user-status":
             user_id = int(query.get("user_id", [0])[0])
@@ -87,6 +93,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
+            logger.info(f"📤 [GET] Ответ на /api/user-status для user_id={user_id}: {response}")
             return
 
         elif path == "/api/admin-chats":
@@ -98,23 +105,25 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
                     async def check_admin():
                         try:
                             member = await telegram_application.bot.get_chat_member(MY_GROUP_ID, user_id)
+                            logger.info(f"🛡 Проверка прав админа для user_id={user_id} в чате {MY_GROUP_ID}. Статус: {member.status}")
                             if member.status in ["creator", "administrator"]:
                                 chat = await telegram_application.bot.get_chat(MY_GROUP_ID)
                                 return [{"id": MY_GROUP_ID, "title": chat.title or "Волейбольная группа"}]
                         except Exception as e:
-                            logger.error(f"Не удалось проверить админа в группе {MY_GROUP_ID}: {e}")
+                            logger.error(f"❌ Ошибка внутри check_admin для {user_id}: {e}")
                         return []
 
                     future = asyncio.run_coroutine_threadsafe(check_admin(), bot_loop)
                     admin_chats = future.result(timeout=5)
             except Exception as e:
-                logger.error(f"Ошибка получения админ-чатов: {e}")
+                logger.error(f"❌ Общая ошибка получения админ-чатов: {e}")
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps(admin_chats, ensure_ascii=False).encode("utf-8"))
+            logger.info(f"📤 [GET] Ответ на /api/admin-chats для user_id={user_id}: {admin_chats}")
             return
 
         elif path == "/ping":
@@ -134,13 +143,15 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length)
         
-        logger.info(f"📥 POST запрос на {path}")
-        logger.info(f"📦 Тело запроса (Raw Body): {body.decode('utf-8', errors='ignore')}")
+        logger.info(f"📥 [POST] Входящий запрос -> Путь: {path}")
+        logger.info(f"📦 [POST] Заголовки: {dict(self.headers)}")
+        logger.info(f"📦 [POST] Тело запроса (Raw): {body.decode('utf-8', errors='ignore')}")
 
         try:
             data = json.loads(body.decode('utf-8'))
+            logger.info(f"🔍 [POST] Успешно разобран JSON: {data}")
         except Exception as e:
-            logger.error(f"❌ Ошибка разбора JSON в POST-запросе: {e}")
+            logger.error(f"❌ [POST] Ошибка разбора JSON: {e}")
             data = {}
 
         if path == "/api/signup":
@@ -165,6 +176,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
+            logger.info(f"📤 [POST] Ответ на /api/signup: {response}")
             return
 
         elif path == "/api/create-game":
@@ -182,12 +194,13 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
                 "reserve_list": [],
                 "game_info": data
             }
+            logger.info(f"📝 Игра сохранена в памяти для чата {chat_id}. Всего активных игр: {len(ACTIVE_GAMES)}")
 
             if telegram_application and bot_loop:
                 async def send_now():
                     try:
-                        publish_time = data.get('publish_time', 'Сразу')
-                        logger.info(f"🚀 Попытка отправки анонса в чат {chat_id}. Время публикации: {publish_time}")
+                        publish_time = data.get('publish_time', 'now')
+                        logger.info(f"🚀 Запуск отправки анонса в Telegram. Чат ID: {chat_id}, Время публикации: {publish_time}")
                         
                         text = (
                             f"🏐 **Волейбольный матч!**\n\n"
@@ -202,19 +215,20 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
                         web_app_url = "https://squadgamesignups.onrender.com"
                         keyboard = [[InlineKeyboardButton(text="🏐 Управлять записью", web_app=WebAppInfo(url=web_app_url))]]
                         
+                        logger.info(f"📡 Вызов telegram_application.bot.send_message в чат {chat_id}...")
                         msg = await telegram_application.bot.send_message(
                             chat_id=chat_id, 
                             text=text, 
                             reply_markup=InlineKeyboardMarkup(keyboard), 
                             parse_mode="Markdown"
                         )
-                        logger.info(f"✅ УСПЕХ! Анонс отправлен. Message ID: {msg.message_id}")
+                        logger.info(f"✅ УСПЕХ! Анонс отправлен в Telegram. Message ID: {msg.message_id}")
                     except Exception as e:
-                        logger.exception(f"❌ КРИТИЧЕСКАЯ ОШИБКА при отправке сообщения в Telegram:")
+                        logger.exception(f"❌ КРИТИЧЕСКАЯ ОШИБКА отправки сообщения в Telegram-чат {chat_id}:")
 
                 asyncio.run_coroutine_threadsafe(send_now(), bot_loop)
             else:
-                logger.error("❌ Невозможно отправить сообщение: telegram_application или bot_loop не инициализированы!")
+                logger.error("❌ ОШИБКА: telegram_application или bot_loop не инициализированы!")
 
             response = {"success": success}
             self.send_response(200)
@@ -222,10 +236,12 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
+            logger.info(f"📤 [POST] Ответ на /api/create-game отправлен клиенту: {response}")
             return
 
         self.send_response(404)
         self.end_headers()
+        logger.warning(f"⚠️ [POST] Неизвестный путь: {path}")
 
     def do_OPTIONS(self, *args, **kwargs):
         self.send_response(200)
@@ -238,7 +254,7 @@ class WebAppAPIHandler(SimpleHTTPRequestHandler):
 def run_http_server():
     server_address = ('0.0.0.0', 10000)
     httpd = HTTPServer(server_address, WebAppAPIHandler)
-    logger.info("==> Веб-сервер и API запущены на порту 10000")
+    logger.info("==> Веб-сервер и HTTP API запущены на порту 10000")
     httpd.serve_forever()
 
 
@@ -250,12 +266,13 @@ def main():
         return
 
     telegram_application = Application.builder().token(TOKEN).build()
-    telegram_application.add_handler(CommandHandler("start", start))
+    # Регистрируем /start только для личных чатов во избежание ошибок с кнопками в группах
+    telegram_application.add_handler(CommandHandler("start", start, filters=filters.ChatType.PRIVATE))
 
     server_thread = threading.Thread(target=run_http_server, daemon=True)
     server_thread.start()
 
-    logger.info("==> Бот запущен и готов к работе")
+    logger.info("==> Telegram бот запущен через run_polling()")
     
     try:
         bot_loop = asyncio.get_running_loop()

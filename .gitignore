@@ -1,5 +1,9 @@
+# Environment variables
 venv/
 .env
-data.json
 __pycache__/
 *.pyc
+.clinerules
+.idea/
+.vscode/
+data.json

@@ -69,10 +69,11 @@
     <script type="module">
         import { initRouter } from './js/core/router_ui.js';
         import { initSignups } from './js/modules/signups.js';
-        import './js/modules/announcements.js';
+        import { initAnnouncements } from './js/modules/announcements.js';
         document.addEventListener("DOMContentLoaded", async () => {
             await initRouter();
             await initSignups();
+            initAnnouncements();
         });
     </script>
 </body>

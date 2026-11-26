@@ -1,9 +1,20 @@
+from datetime import datetime
 from html import escape
 import logging
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.error import TelegramError
 
 logger = logging.getLogger(__name__)
+
+_RU_WEEKDAYS = {
+    0: "Понедельник",
+    1: "Вторник",
+    2: "Среда",
+    3: "Четверг",
+    4: "Пятница",
+    5: "Суббота",
+    6: "Воскресенье",
+}
 
 
 def _format_hm(raw_time: str) -> str:
@@ -16,13 +27,27 @@ def _format_hm(raw_time: str) -> str:
     return val
 
 
+def _format_date_with_weekday(raw_date: str) -> str:
+    date_str = str(raw_date or "").strip()
+    if not date_str:
+        return "Уточняется"
+    try:
+        dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
+        weekday_ru = _RU_WEEKDAYS.get(dt.weekday())
+        if weekday_ru:
+            return f"{date_str}, {weekday_ru}"
+    except ValueError:
+        pass
+    return date_str
+
+
 def build_announcement_text(
     game_data: dict,
     main_count: int = 0,
     max_players: int | None = None,
     reserve_count: int = 0,
 ) -> str:
-    date_str = str(game_data.get("date") or "Уточняется").strip()
+    date_label = _format_date_with_weekday(str(game_data.get("date") or ""))
     time_start = _format_hm(str(game_data.get("time_start") or ""))
     time_end = _format_hm(str(game_data.get("time_end") or ""))
 
@@ -33,7 +58,7 @@ def build_announcement_text(
     else:
         time_part = ""
 
-    date_line = f"📅 {escape(f'{date_str}{time_part}')}"
+    date_line = f"📅 {escape(f'{date_label}{time_part}')}"
 
     loc_name = escape(str(game_data.get("loc_name") or "Уточняется").strip())
     loc_link = str(game_data.get("loc_link") or "").strip()

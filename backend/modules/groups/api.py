@@ -15,31 +15,35 @@ async def get_admin_chats(user: dict = Depends(get_current_user)):
     db = get_db()
     user_id = user.get("id")
     
+    logger.info(f"Fetching admin chats for user_id={user_id}")
+    
     try:
         res = db.table("groups").select("*").eq("is_active", True).execute()
         groups = res.data or []
+        logger.info(f"Found {len(groups)} total active groups in DB")
         
         admin_chats = []
-        # We need bot instance from telegram application or gateway
         from backend.core.telegram_gateway import telegram_gateway
         
         if not telegram_gateway._bot:
-            # Fallback if bot not ready
+            logger.warning("Telegram bot instance is not available for chat member check")
             return []
 
         for group in groups:
             group_id = group["group_id"]
             try:
                 member = await telegram_gateway._bot.get_chat_member(chat_id=group_id, user_id=user_id)
+                logger.info(f"User {user_id} status in chat {group_id}: {member.status}")
                 if member.status in ["creator", "administrator"]:
                     admin_chats.append({
                         "id": group_id,
                         "title": group["title"]
                     })
             except Exception as e:
-                logger.debug(f"User {user_id} is not admin in group {group_id}: {e}")
-
+                logger.warning(f"Failed to check admin status for user {user_id} in group {group_id}: {e}")
+        
+        logger.info(f"Returning {len(admin_chats)} admin chats for user_id={user_id}")
         return admin_chats
     except Exception as e:
-        logger.error(f"Error fetching admin chats for user {user_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error(f"Critical error fetching admin chats for user {user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

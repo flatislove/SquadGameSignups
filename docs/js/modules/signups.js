@@ -83,6 +83,28 @@ export async function initSignups() {
 
     let gameId = resolveAnnouncementGameId();
     let cachedDbPlayers = [];
+    let currentGameMeta = { mainCount: 0, reserveCount: 0, maxPlayers: 0 };
+
+    function updatePaymentSummaryText() {
+        if (!refs.payment || !refs.players) return;
+        const paidCount = refs.players.querySelectorAll('.player-name-paid').length;
+        refs.payment.innerText = `Основной: ${currentGameMeta.mainCount}/${currentGameMeta.maxPlayers} | Резерв: ${currentGameMeta.reserveCount} | Оплатили: ${paidCount}`;
+    }
+
+    function applyRowPaymentState(btn, isPaid) {
+        const nextIsPaid = Boolean(isPaid);
+        btn.dataset.paid = String(!nextIsPaid);
+        btn.textContent = nextIsPaid ? '↩️' : '💳';
+
+        const row = btn.closest('.player-item');
+        const nameEl = row?.querySelector('.player-info > span:last-child');
+        if (nameEl) {
+            nameEl.classList.toggle('player-name-paid', nextIsPaid);
+            nameEl.classList.toggle('player-name-unpaid', !nextIsPaid);
+        }
+
+        updatePaymentSummaryText();
+    }
 
     function switchModalMode(mode) {
         const isDb = mode === 'db';
@@ -178,6 +200,7 @@ export async function initSignups() {
         refs.dbPlayersList.querySelectorAll('.add-db-player').forEach((btn) => {
             btn.onclick = async () => {
                 if (!gameId) return;
+                btn.disabled = true;
                 try {
                     await apiFetch('/api/signups/admin-add', {
                         method: 'POST',
@@ -192,6 +215,8 @@ export async function initSignups() {
                 } catch (err) {
                     console.error('Ошибка добавления игрока из базы:', err);
                     if (tg?.showAlert) tg.showAlert(`❌ ${err.message}`);
+                } finally {
+                    btn.disabled = false;
                 }
             };
         });
@@ -236,6 +261,12 @@ export async function initSignups() {
             const link = safeUrl(game.loc_link);
             const locName = escapeHtml(game.loc_name || 'Площадка');
 
+            currentGameMeta = {
+                mainCount: data.main_count ?? 0,
+                reserveCount: data.reserve_count ?? 0,
+                maxPlayers: data.max_players ?? 0
+            };
+
             if (refs.details) {
                 const locationHtml = link
                     ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${locName}</a>`
@@ -254,19 +285,20 @@ export async function initSignups() {
             const signupsList = Array.isArray(data.signups) ? data.signups : [];
             const paidCount = signupsList.filter((s) => Boolean(s.is_paid)).length;
             if (refs.payment) {
-                refs.payment.innerText = `Основной: ${data.main_count ?? 0}/${data.max_players ?? 0} | Резерв: ${data.reserve_count ?? 0} | Оплатили: ${paidCount}`;
+                refs.payment.innerText = `Основной: ${currentGameMeta.mainCount}/${currentGameMeta.maxPlayers} | Резерв: ${currentGameMeta.reserveCount} | Оплатили: ${paidCount}`;
             }
 
             if (refs.totalCount) {
                 refs.totalCount.textContent = String(signupsList.length);
             }
             if (refs.maxCount) {
-                refs.maxCount.textContent = String(data.max_players ?? 0);
+                refs.maxCount.textContent = String(currentGameMeta.maxPlayers);
             }
 
             if (refs.action) {
                 refs.action.style.display = data.status === 'not_registered' ? 'block' : 'none';
                 refs.action.onclick = async () => {
+                    refs.action.disabled = true;
                     try {
                         const res = await apiFetch('/api/signups', {
                             method: 'POST',
@@ -279,6 +311,8 @@ export async function initSignups() {
                     } catch (err) {
                         console.error('Ошибка записи:', err);
                         if (tg?.showAlert) tg.showAlert(`❌ Ошибка записи: ${err.message}`);
+                    } finally {
+                        refs.action.disabled = false;
                     }
                 };
             }
@@ -286,12 +320,15 @@ export async function initSignups() {
             if (refs.cancel) {
                 refs.cancel.style.display = data.status !== 'not_registered' ? 'block' : 'none';
                 refs.cancel.onclick = async () => {
+                    refs.cancel.disabled = true;
                     try {
                         await apiFetch(`/api/signups?game_id=${encodeURIComponent(gameId)}`, { method: 'DELETE' });
                         await loadData();
                     } catch (err) {
                         console.error('Ошибка отмены записи:', err);
                         if (tg?.showAlert) tg.showAlert(`❌ Ошибка отмены: ${err.message}`);
+                    } finally {
+                        refs.cancel.disabled = false;
                     }
                 };
             }
@@ -347,21 +384,29 @@ export async function initSignups() {
 
         refs.players.querySelectorAll('.toggle-pay').forEach((btn) => {
             btn.onclick = async () => {
+                if (btn.disabled) return;
+                const targetIsPaid = btn.dataset.paid === 'true';
+                btn.disabled = true;
                 try {
-                    await apiFetch(`/api/signups/${encodeURIComponent(btn.dataset.id)}/pay`, {
+                    const res = await apiFetch(`/api/signups/${encodeURIComponent(btn.dataset.id)}/pay`, {
                         method: 'PATCH',
-                        body: JSON.stringify({ is_paid: btn.dataset.paid === 'true' })
+                        body: JSON.stringify({ is_paid: targetIsPaid })
                     });
-                    await loadData();
+                    const confirmedIsPaid = typeof res?.is_paid === 'boolean' ? res.is_paid : targetIsPaid;
+                    applyRowPaymentState(btn, confirmedIsPaid);
                 } catch (err) {
                     console.error('Ошибка смены статуса оплаты:', err);
                     if (tg?.showAlert) tg.showAlert(`❌ Не удалось обновить оплату: ${err.message}`);
+                } finally {
+                    btn.disabled = false;
                 }
             };
         });
 
         refs.players.querySelectorAll('.remove-signup').forEach((btn) => {
             btn.onclick = async () => {
+                if (btn.disabled) return;
+                btn.disabled = true;
                 try {
                     await apiFetch(`/api/signups/${encodeURIComponent(btn.dataset.id)}/admin-remove`, {
                         method: 'DELETE'
@@ -370,6 +415,8 @@ export async function initSignups() {
                 } catch (err) {
                     console.error('Ошибка удаления игрока:', err);
                     if (tg?.showAlert) tg.showAlert(`❌ Не удалось удалить игрока: ${err.message}`);
+                } finally {
+                    btn.disabled = false;
                 }
             };
         });

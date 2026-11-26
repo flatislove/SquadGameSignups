@@ -22,11 +22,12 @@ logger = logging.getLogger(__name__)
 
 telegram_application = None
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global telegram_application
     logger.info("==> Starting FastAPI application & Telegram Bot lifespan...")
-    
+
     # Initialize DB & Scheduler
     init_db()
     init_scheduler()
@@ -40,12 +41,21 @@ async def lifespan(app: FastAPI):
             write_timeout=15.0,
             pool_timeout=15.0
         )
-        
-        telegram_application = Application.builder().token(settings.BOT_TOKEN).request(telegram_request).build()
-        
+
+        telegram_application = (
+            Application.builder()
+            .token(settings.BOT_TOKEN)
+            .request(telegram_request)
+            .build()
+        )
+
         # Register bot handlers
-        telegram_application.add_handler(CommandHandler("start", start_command, filters=filters.ChatType.PRIVATE))
-        telegram_application.add_handler(ChatMemberHandler(track_chats, ChatMemberHandler.MY_CHAT_MEMBER))
+        telegram_application.add_handler(
+            CommandHandler("start", start_command, filters=filters.ChatType.PRIVATE)
+        )
+        telegram_application.add_handler(
+            ChatMemberHandler(track_chats, ChatMemberHandler.MY_CHAT_MEMBER)
+        )
 
         # Start bot with retries
         max_retries = 3
@@ -53,15 +63,19 @@ async def lifespan(app: FastAPI):
             try:
                 await telegram_application.initialize()
                 await telegram_application.start()
-                
+
                 if telegram_application.updater:
-                    await telegram_application.updater.start_polling(allowed_updates=["message", "my_chat_member"])
+                    await telegram_application.updater.start_polling(
+                        allowed_updates=["message", "my_chat_member"]
+                    )
 
                 telegram_gateway.set_bot(telegram_application.bot)
                 logger.info("==> Telegram Bot successfully started via polling in FastAPI lifespan")
                 break
             except (ReadTimeout, ConnectTimeout, PoolTimeout, Exception) as e:
-                logger.warning(f"⚠️ Telegram bot startup attempt {attempt + 1} failed: {e}. Retrying in 5 seconds...")
+                logger.warning(
+                    f"⚠️ Telegram bot startup attempt {attempt + 1} failed: {e}. Retrying in 5 seconds..."
+                )
                 if attempt == max_retries - 1:
                     logger.error("❌ Failed to start Telegram bot after max retries.")
                 else:
@@ -80,6 +94,7 @@ async def lifespan(app: FastAPI):
     if scheduler.running:
         scheduler.shutdown()
 
+
 app = FastAPI(
     title="SquadGameSignups API",
     version="2.0.0",
@@ -91,16 +106,18 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 # Register all API routers
 register_all_routers(app)
 
+
 @app.get("/ping")
 async def ping():
     return {"status": "alive", "service": "SquadGameSignups backend"}
+
 
 if __name__ == "__main__":
     import uvicorn

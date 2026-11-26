@@ -7,20 +7,27 @@ from telegram.error import TelegramError
 logger = logging.getLogger(__name__)
 
 
+def _format_hm(raw_time: str) -> str:
+    val = str(raw_time or "").strip()
+    if not val:
+        return ""
+    parts = val.split(":")
+    if len(parts) >= 2:
+        return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
+    return val
+
+
 def _parse_start_unix_timestamp(game_data: dict) -> int | None:
     date_str = str(game_data.get("date") or "").strip()
-    time_start = str(game_data.get("time_start") or "").strip()
+    time_start = _format_hm(str(game_data.get("time_start") or ""))
     if not date_str:
         return None
 
     candidates = []
     if time_start:
-        hm = time_start[:5]
-        candidates.append((f"{date_str} {hm}", "%Y-%m-%d %H:%M"))
-        candidates.append((f"{date_str} {time_start}", "%Y-%m-%d %H:%M:%S"))
+        candidates.append((f"{date_str} {time_start}", "%Y-%m-%d %H:%M"))
     candidates.append((f"{date_str} 00:00", "%Y-%m-%d %H:%M"))
 
-    # Часовой пояс по умолчанию (если в game_data нет явного смещения — используем локальный/Asia/Almaty +05)
     tz = timezone(timedelta(hours=5))
 
     for raw_dt, fmt in candidates:
@@ -41,8 +48,8 @@ def build_announcement_text(
     use_tg_time: bool = True,
 ) -> str:
     date_str = str(game_data.get("date") or "Уточняется").strip()
-    time_start = str(game_data.get("time_start") or "").strip()
-    time_end = str(game_data.get("time_end") or "").strip()
+    time_start = _format_hm(str(game_data.get("time_start") or ""))
+    time_end = _format_hm(str(game_data.get("time_end") or ""))
 
     if time_start and time_end:
         time_part = f" ({time_start} - {time_end})"
@@ -51,13 +58,13 @@ def build_announcement_text(
     else:
         time_part = ""
 
-    fallback_date_text = escape(f"{date_str}{time_part}")
+    display_date_text = escape(f"{date_str}{time_part}")
     unix_ts = _parse_start_unix_timestamp(game_data) if use_tg_time else None
 
     if unix_ts is not None:
-        date_line = f'📅 <tg-time unix="{unix_ts}" format="wDt">{fallback_date_text}</tg-time>'
+        date_line = f'📅 <tg-time unix="{unix_ts}" format="wDt">{display_date_text}</tg-time>'
     else:
-        date_line = f"📅 {fallback_date_text}"
+        date_line = f"📅 {display_date_text}"
 
     loc_name = escape(str(game_data.get("loc_name") or "Уточняется").strip())
     loc_link = str(game_data.get("loc_link") or "").strip()
@@ -150,7 +157,6 @@ class TelegramGateway:
             )
             return msg.message_id
         except TelegramError as te:
-            # Фолбэк без <tg-time>, если сервер/версия API не поддерживает тег даты/времени
             if "<tg-time" in text:
                 logger.warning(f"Retrying announcement without <tg-time> for game {game_id}: {te}")
                 fallback_text = build_announcement_text(

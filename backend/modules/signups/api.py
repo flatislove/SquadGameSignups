@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from backend.core.auth import get_current_user, verify_chat_admin
+from backend.core.config import settings
 from backend.core.db import get_db
 from backend.core.telegram_gateway import telegram_gateway
 import logging
@@ -114,6 +115,35 @@ async def _check_game_admin(game: dict, user_id: int | None) -> bool:
         return False
 
 
+async def _sync_announcement_message(db, game_id: str) -> None:
+    try:
+        game_res = db.table("games").select("*").eq("id", game_id).execute()
+        if not game_res.data:
+            return
+        game = game_res.data[0]
+        chat_id = game.get("group_id") or game.get("chat_id")
+        message_id = game.get("message_id")
+        if not chat_id or not message_id:
+            return
+
+        signups_res = db.table("signups").select("status").eq("game_id", game_id).execute()
+        rows = signups_res.data or []
+        main_count = sum(1 for r in rows if r.get("status") == "main")
+        reserve_count = sum(1 for r in rows if r.get("status") == "reserve")
+
+        await telegram_gateway.update_game_announcement(
+            chat_id=int(chat_id),
+            message_id=int(message_id),
+            game_id=str(game_id),
+            game_data=game,
+            bot_username=settings.BOT_USERNAME,
+            main_count=main_count,
+            reserve_count=reserve_count,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to sync announcement message for game {game_id}: {e}")
+
+
 @router.get("/status")
 async def get_signup_status(game_id: str, user: dict = Depends(get_current_user)):
     user_id = user.get("id")
@@ -197,6 +227,7 @@ async def cancel_signup(game_id: str, user: dict = Depends(get_current_user)):
                 first_reserve = reserve_list[0]
                 db.table("signups").update({"status": "main"}).eq("id", first_reserve["id"]).execute()
 
+        await _sync_announcement_message(db, game_id)
         return {"success": True}
     except Exception as e:
         logger.error(f"Error cancelling signup for user {user_id} in game {game_id}: {e}", exc_info=True)
@@ -253,6 +284,7 @@ async def signup_user(payload: SignupSchema, user: dict = Depends(get_current_us
             row.pop("user_name", None)
             db.table("signups").insert(row).execute()
 
+        await _sync_announcement_message(db, game_id)
         return {"success": True, "status": signup_status}
 
     except HTTPException:
@@ -303,6 +335,7 @@ async def admin_add_signup(payload: AdminAddSignupSchema, user: dict = Depends(g
             insert_data.pop("user_name", None)
             db.table("signups").insert(insert_data).execute()
 
+        await _sync_announcement_message(db, payload.game_id)
         return {"success": True, "status": signup_status}
 
     except HTTPException:
@@ -377,6 +410,7 @@ async def admin_remove_signup(signup_id: str, user: dict = Depends(get_current_u
         if len(main_list) < max_players and reserve_list:
             db.table("signups").update({"status": "main"}).eq("id", reserve_list[0]["id"]).execute()
 
+        await _sync_announcement_message(db, game_id)
         return {"success": True}
 
     except HTTPException:

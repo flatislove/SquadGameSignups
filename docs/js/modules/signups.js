@@ -23,6 +23,23 @@ function formatPlayerDisplayName(rawName) {
     return cleaned;
 }
 
+function resolveAnnouncementGameId() {
+    if (window.CURRENT_GAME_ID) {
+        return String(window.CURRENT_GAME_ID);
+    }
+
+    const startParam = tg?.initDataUnsafe?.start_param;
+    if (typeof startParam === 'string' && startParam.startsWith('game_')) {
+        const parsedId = startParam.slice('game_'.length).trim();
+        if (parsedId) {
+            window.CURRENT_GAME_ID = parsedId;
+            return parsedId;
+        }
+    }
+
+    return null;
+}
+
 export async function initSignups() {
     const refs = {
         details: document.getElementById('game-details'),
@@ -64,7 +81,7 @@ export async function initSignups() {
         closeReceiptModalBtn: document.getElementById('close-receipt-modal')
     };
 
-    let gameId = window.CURRENT_GAME_ID;
+    let gameId = resolveAnnouncementGameId();
     let cachedDbPlayers = [];
 
     function switchModalMode(mode) {
@@ -160,6 +177,7 @@ export async function initSignups() {
 
         refs.dbPlayersList.querySelectorAll('.add-db-player').forEach((btn) => {
             btn.onclick = async () => {
+                if (!gameId) return;
                 try {
                     await apiFetch('/api/signups/admin-add', {
                         method: 'POST',
@@ -193,30 +211,24 @@ export async function initSignups() {
     }
 
     async function loadData() {
+        gameId = resolveAnnouncementGameId();
+
         if (!gameId) {
-            try {
-                const latest = await apiFetch('/api/games/latest');
-                if (!latest || !latest.id) {
-                    if (refs.details) refs.details.textContent = '📅 Пока нет активных игр.';
-                    if (refs.status) refs.status.style.display = 'none';
-                    if (refs.players) refs.players.innerHTML = '';
-                    if (refs.totalCount) refs.totalCount.textContent = '0';
-                    if (refs.maxCount) refs.maxCount.textContent = '0';
-                    return;
-                }
-                gameId = latest.id;
-                window.CURRENT_GAME_ID = gameId;
-            } catch (e) {
-                console.error('Ошибка получения активной игры:', e);
-                if (refs.details) {
-                    refs.details.textContent = e?.status === 404
-                        ? '📅 Пока нет активных игр.'
-                        : `❌ Не удалось загрузить игру: ${e?.message || 'ошибка сети'}`;
-                }
-                if (refs.status) refs.status.style.display = 'none';
-                return;
+            if (refs.details) {
+                refs.details.textContent = 'ℹ️ Чтобы открыть матч, нажмите кнопку «Запись» под анонсом в группе.';
             }
+            if (refs.status) refs.status.style.display = 'none';
+            if (refs.action) refs.action.style.display = 'none';
+            if (refs.cancel) refs.cancel.style.display = 'none';
+            if (refs.confirmPaymentBtn) refs.confirmPaymentBtn.style.display = 'none';
+            if (refs.adminPanel) refs.adminPanel.style.display = 'none';
+            if (refs.players) refs.players.innerHTML = '';
+            if (refs.totalCount) refs.totalCount.textContent = '0';
+            if (refs.maxCount) refs.maxCount.textContent = '0';
+            return;
         }
+
+        if (refs.confirmPaymentBtn) refs.confirmPaymentBtn.style.display = 'block';
 
         try {
             const data = await apiFetch(`/api/signups/status?game_id=${encodeURIComponent(gameId)}`);

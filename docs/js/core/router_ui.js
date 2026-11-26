@@ -6,15 +6,33 @@ export async function initRouter() {
     const startParam = tg.initDataUnsafe?.start_param || urlParams.get('startapp');
 
     // Always keep tabSwitcher visible
-    document.getElementById('tabSwitcher').style.display = 'flex';
-
-    if (startParam && startParam.startsWith('game_')) {
-        window.CURRENT_GAME_ID = startParam.replace('game_', '');
+    const tabSwitcher = document.getElementById('tabSwitcher');
+    if (tabSwitcher) {
+        tabSwitcher.style.display = 'flex';
     }
-    
-    // Default to signup section if no specific game or create tab requested
-    document.getElementById('signupSection').classList.add('active');
-    document.getElementById('createSection').classList.remove('active');
+
+    const hasGameParam = Boolean(startParam && startParam.startsWith('game_'));
+    if (hasGameParam) {
+        window.CURRENT_GAME_ID = startParam.slice('game_'.length).trim();
+    } else {
+        delete window.CURRENT_GAME_ID;
+    }
+
+    const signupSection = document.getElementById('signupSection');
+    const createSection = document.getElementById('createSection');
+    const tabButtons = document.querySelectorAll('#tabSwitcher .tab-btn');
+
+    if (hasGameParam && window.CURRENT_GAME_ID) {
+        signupSection?.classList.add('active');
+        createSection?.classList.remove('active');
+        tabButtons[0]?.classList.add('active');
+        tabButtons[1]?.classList.remove('active');
+    } else {
+        signupSection?.classList.remove('active');
+        createSection?.classList.add('active');
+        tabButtons[0]?.classList.remove('active');
+        tabButtons[1]?.classList.add('active');
+    }
 
     // Load admin chats in background for the create tab
     const select = document.getElementById('chatSelect');

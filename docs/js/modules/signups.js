@@ -17,6 +17,8 @@ function safeUrl(url) {
 
 export async function initSignups() {
     const refs = {
+        totalCount: document.getElementById('total-count'),
+        maxCount: document.getElementById('max-count'),
         details: document.getElementById('game-details'),
         status: document.getElementById('status-container'),
         statusText: document.getElementById('status-text'),
@@ -83,6 +85,8 @@ export async function initSignups() {
             if (refs.payment) {
                 refs.payment.innerText = `Основной: ${data.main_count ?? 0}/${data.max_players ?? 0} | Резерв: ${data.reserve_count ?? 0}`;
             }
+            refs.totalCount.textContent = data.main_count || 0;
+            refs.maxCount.textContent = data.max_players || 0;
 
             if (refs.action) {
                 refs.action.style.display = data.status === 'not_registered' ? 'block' : 'none';

@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
-from backend.core.auth import get_current_user, verify_chat_admin
+from backend.core.auth import get_current_user, verify_chat_admin, is_superuser
 from backend.core.config import settings
 from backend.core.db import get_db
 from backend.core.telegram_gateway import telegram_gateway
+import asyncio
 import logging
 import time
 
@@ -11,6 +12,18 @@ router = APIRouter(prefix="/api/signups", tags=["signups"])
 logger = logging.getLogger(__name__)
 
 _tg_names_cache: dict[int, str] = {}
+_background_tasks: set[asyncio.Task] = set()
+
+
+async def _db(fn):
+    """Runs synchronous Supabase client calls in a worker thread to avoid blocking event loop."""
+    return await asyncio.to_thread(fn)
+
+
+def _schedule_background(coro) -> None:
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 class SignupSchema(BaseModel):
@@ -79,46 +92,59 @@ def _format_tg_user_name(chat_or_user) -> str | None:
     return None
 
 
-async def _resolve_telegram_name(user_id: int) -> str | None:
-    if user_id in _tg_names_cache:
-        return _tg_names_cache[user_id]
+async def _fetch_missing_tg_names_in_bg(user_ids: list[int]) -> None:
     bot = getattr(telegram_gateway, "_bot", None)
     if not bot:
-        return None
-    try:
-        tg_chat = await bot.get_chat(user_id)
-        name = _format_tg_user_name(tg_chat)
-        if name:
-            _tg_names_cache[user_id] = name
-            return name
-    except Exception as e:
-        logger.debug(f"Could not fetch Telegram name for user_id={user_id}: {e}")
-    return None
+        return
+    for uid in user_ids:
+        if uid in _tg_names_cache:
+            continue
+        try:
+            tg_chat = await bot.get_chat(uid)
+            name = _format_tg_user_name(tg_chat)
+            if name:
+                _tg_names_cache[uid] = name
+        except Exception as e:
+            logger.debug(f"Could not fetch Telegram name for user_id={uid}: {e}")
 
 
 async def _enrich_signups(db, game_id: str, signups: list[dict]) -> list[dict]:
-    player_ids = [s.get("player_id") for s in signups if s.get("player_id")]
-    tg_ids = [
+    player_ids = list({str(s["player_id"]) for s in signups if s.get("player_id")})
+    tg_ids_without_player = list({
         int(s["user_id"])
         for s in signups
-        if s.get("user_id") is not None and int(s["user_id"]) > 0
-    ]
+        if not s.get("player_id") and s.get("user_id") is not None and int(s["user_id"]) > 0
+    })
 
     players_by_id: dict[str, dict] = {}
     players_by_tg: dict[int, dict] = {}
 
     try:
+        tasks = []
         if player_ids:
-            p_res = db.table("players").select("*").in_("id", list(set(player_ids))).execute()
-            for p in p_res.data or []:
+            tasks.append(_db(lambda: db.table("players").select("*").in_("id", player_ids).execute()))
+        else:
+            tasks.append(asyncio.sleep(0, result=None))
+
+        if tg_ids_without_player:
+            tasks.append(_db(lambda: db.table("players").select("*").in_("telegram_id", tg_ids_without_player).execute()))
+        else:
+            tasks.append(asyncio.sleep(0, result=None))
+
+        p_res, p_tg_res = await asyncio.gather(*tasks)
+
+        if p_res and getattr(p_res, "data", None):
+            for p in p_res.data:
                 players_by_id[str(p["id"])] = p
-        if tg_ids:
-            p_tg_res = db.table("players").select("*").in_("telegram_id", list(set(tg_ids))).execute()
-            for p in p_tg_res.data or []:
+
+        if p_tg_res and getattr(p_tg_res, "data", None):
+            for p in p_tg_res.data:
                 if p.get("telegram_id") is not None:
                     players_by_tg[int(p["telegram_id"])] = p
     except Exception as e:
         logger.warning(f"Failed to load players for game {game_id}: {e}")
+
+    missing_tg_ids: list[int] = []
 
     for s in signups:
         uid = s.get("user_id")
@@ -135,16 +161,28 @@ async def _enrich_signups(db, game_id: str, signups: list[dict]) -> list[dict]:
             s["telegram_username"] = player_rec.get("telegram_username")
 
         if not s.get("user_name"):
-            name = await _resolve_telegram_name(int(uid)) if uid is not None and int(uid) > 0 else None
-            s["user_name"] = name or "Участник"
+            if uid is not None and int(uid) > 0:
+                cached_name = _tg_names_cache.get(int(uid))
+                if cached_name:
+                    s["user_name"] = cached_name
+                else:
+                    missing_tg_ids.append(int(uid))
+                    s["user_name"] = "Участник"
+            else:
+                s["user_name"] = "Участник"
 
         if "is_paid" not in s:
             s["is_paid"] = bool(s.get("paid", False))
+
+    if missing_tg_ids:
+        _schedule_background(_fetch_missing_tg_names_in_bg(missing_tg_ids[:10]))
 
     return signups
 
 
 async def _check_game_admin(game: dict, user_id: int | None) -> bool:
+    if is_superuser(user_id):
+        return True
     chat_id = game.get("group_id") or game.get("chat_id")
     bot = getattr(telegram_gateway, "_bot", None)
     if not chat_id or user_id is None or not bot:
@@ -156,9 +194,10 @@ async def _check_game_admin(game: dict, user_id: int | None) -> bool:
         return False
 
 
-async def _sync_announcement_message(db, game_id: str) -> None:
+async def _sync_announcement_message(game_id: str) -> None:
+    db = get_db()
     try:
-        game_res = db.table("games").select("*").eq("id", game_id).execute()
+        game_res = await _db(lambda: db.table("games").select("*").eq("id", game_id).execute())
         if not game_res.data:
             return
         game = game_res.data[0]
@@ -167,7 +206,7 @@ async def _sync_announcement_message(db, game_id: str) -> None:
         if not chat_id or not message_id:
             return
 
-        signups_res = db.table("signups").select("status").eq("game_id", game_id).execute()
+        signups_res = await _db(lambda: db.table("signups").select("status").eq("game_id", game_id).execute())
         rows = signups_res.data or []
         main_count = sum(1 for r in rows if r.get("status") == "main")
         reserve_count = sum(1 for r in rows if r.get("status") == "reserve")
@@ -189,7 +228,7 @@ async def _sync_announcement_message(db, game_id: str) -> None:
 async def list_players(search: str | None = None, user: dict = Depends(get_current_user)):
     db = get_db()
     try:
-        res = db.table("players").select("*").order("name", desc=False).execute()
+        res = await _db(lambda: db.table("players").select("*").order("name", desc=False).execute())
         players = res.data or []
         if search and search.strip():
             q = search.strip().lower()
@@ -210,7 +249,7 @@ async def create_player(payload: PlayerCreateOrUpdateSchema, user: dict = Depend
     db = get_db()
     try:
         if payload.telegram_id is not None:
-            existing = db.table("players").select("*").eq("telegram_id", payload.telegram_id).execute()
+            existing = await _db(lambda: db.table("players").select("id").eq("telegram_id", payload.telegram_id).execute())
             if existing.data:
                 raise HTTPException(status_code=400, detail="Игрок с таким Telegram ID уже существует")
 
@@ -220,7 +259,7 @@ async def create_player(payload: PlayerCreateOrUpdateSchema, user: dict = Depend
             "telegram_id": payload.telegram_id,
             "telegram_username": payload.telegram_username,
         }
-        res = db.table("players").insert(insert_data).execute()
+        res = await _db(lambda: db.table("players").insert(insert_data).execute())
         if not res.data:
             raise HTTPException(status_code=500, detail="Не удалось сохранить игрока в базу")
         return {"success": True, "player": res.data[0]}
@@ -242,13 +281,13 @@ async def update_player(
     db = get_db()
     try:
         if game_id:
-            game_res = db.table("games").select("*").eq("id", game_id).execute()
+            game_res = await _db(lambda: db.table("games").select("*").eq("id", game_id).execute())
             if game_res.data and not await _check_game_admin(game_res.data[0], user_id):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin rights required")
 
         if payload.telegram_id is not None:
-            dup = (
-                db.table("players")
+            dup = await _db(
+                lambda: db.table("players")
                 .select("id")
                 .eq("telegram_id", payload.telegram_id)
                 .neq("id", player_id)
@@ -263,16 +302,18 @@ async def update_player(
             "telegram_id": payload.telegram_id,
             "telegram_username": payload.telegram_username,
         }
-        res = db.table("players").update(update_data).eq("id", player_id).execute()
+        res = await _db(lambda: db.table("players").update(update_data).eq("id", player_id).execute())
         if not res.data:
             raise HTTPException(status_code=404, detail="Игрок не найден")
 
-        # Синхронизируем user_id в активных записях, если у игрока задан telegram_id
         if payload.telegram_id is not None:
             try:
-                db.table("signups").update({"user_id": payload.telegram_id, "user_name": payload.name}).eq(
-                    "player_id", player_id
-                ).execute()
+                await _db(
+                    lambda: db.table("signups")
+                    .update({"user_id": payload.telegram_id, "user_name": payload.name})
+                    .eq("player_id", player_id)
+                    .execute()
+                )
             except Exception:
                 pass
 
@@ -290,20 +331,20 @@ async def get_signup_status(game_id: str, user: dict = Depends(get_current_user)
     db = get_db()
 
     try:
-        game_res = db.table("games").select("*").eq("id", game_id).execute()
+        game_res, signups_res = await asyncio.gather(
+            _db(lambda: db.table("games").select("*").eq("id", game_id).execute()),
+            _db(lambda: db.table("signups").select("*").eq("game_id", game_id).order("created_at", desc=False).execute()),
+        )
+
         if not game_res.data:
             raise HTTPException(status_code=404, detail="Game not found")
         game = game_res.data[0]
         max_players = game.get("max_players") or 0
 
-        signups_res = (
-            db.table("signups")
-            .select("*")
-            .eq("game_id", game_id)
-            .order("created_at", desc=False)
-            .execute()
+        signups, is_admin = await asyncio.gather(
+            _enrich_signups(db, game_id, signups_res.data or []),
+            _check_game_admin(game, user_id),
         )
-        signups = await _enrich_signups(db, game_id, signups_res.data or [])
 
         main_list = [s for s in signups if s.get("status") == "main"]
         reserve_list = [s for s in signups if s.get("status") == "reserve"]
@@ -320,8 +361,6 @@ async def get_signup_status(game_id: str, user: dict = Depends(get_current_user)
             else:
                 status_val = "reserve"
                 message = "⚠️ Мест нет, вы находитесь в РЕЗЕРВЕ."
-
-        is_admin = await _check_game_admin(game, user_id)
 
         return {
             "status": status_val,
@@ -347,27 +386,24 @@ async def cancel_signup(game_id: str, user: dict = Depends(get_current_user)):
     db = get_db()
 
     try:
-        db.table("signups").delete().eq("game_id", game_id).eq("user_id", user_id).execute()
+        await _db(lambda: db.table("signups").delete().eq("game_id", game_id).eq("user_id", user_id).execute())
 
-        game_res = db.table("games").select("max_players").eq("id", game_id).execute()
+        game_res, signups_res = await asyncio.gather(
+            _db(lambda: db.table("games").select("max_players").eq("id", game_id).execute()),
+            _db(lambda: db.table("signups").select("*").eq("game_id", game_id).order("created_at", desc=False).execute()),
+        )
+
         if game_res.data:
             max_players = game_res.data[0].get("max_players") or 0
-            signups_res = (
-                db.table("signups")
-                .select("*")
-                .eq("game_id", game_id)
-                .order("created_at", desc=False)
-                .execute()
-            )
             all_signups = signups_res.data or []
             main_list = [s for s in all_signups if s.get("status") == "main"]
             reserve_list = [s for s in all_signups if s.get("status") == "reserve"]
 
             if len(main_list) < max_players and reserve_list:
                 first_reserve = reserve_list[0]
-                db.table("signups").update({"status": "main"}).eq("id", first_reserve["id"]).execute()
+                await _db(lambda: db.table("signups").update({"status": "main"}).eq("id", first_reserve["id"]).execute())
 
-        await _sync_announcement_message(db, game_id)
+        _schedule_background(_sync_announcement_message(game_id))
         return {"success": True}
     except Exception as e:
         logger.error(f"Error cancelling signup for user {user_id} in game {game_id}: {e}", exc_info=True)
@@ -381,28 +417,19 @@ async def signup_user(payload: SignupSchema, user: dict = Depends(get_current_us
     db = get_db()
 
     try:
-        existing = (
-            db.table("signups")
-            .select("*")
-            .eq("game_id", game_id)
-            .eq("user_id", user_id)
-            .execute()
+        existing, game_res, main_res = await asyncio.gather(
+            _db(lambda: db.table("signups").select("status").eq("game_id", game_id).eq("user_id", user_id).execute()),
+            _db(lambda: db.table("games").select("max_players").eq("id", game_id).execute()),
+            _db(lambda: db.table("signups").select("id").eq("game_id", game_id).eq("status", "main").execute()),
         )
+
         if existing.data:
             return {"success": True, "status": existing.data[0]["status"]}
 
-        game_res = db.table("games").select("max_players").eq("id", game_id).execute()
         if not game_res.data:
             raise HTTPException(status_code=404, detail="Game not found")
         max_players = game_res.data[0].get("max_players") or 0
 
-        main_res = (
-            db.table("signups")
-            .select("id", count="exact")
-            .eq("game_id", game_id)
-            .eq("status", "main")
-            .execute()
-        )
         main_count = len(main_res.data) if main_res.data else 0
         signup_status = "main" if main_count < max_players else "reserve"
 
@@ -413,13 +440,13 @@ async def signup_user(payload: SignupSchema, user: dict = Depends(get_current_us
         if user_id is not None:
             _tg_names_cache[int(user_id)] = tg_name
             try:
-                p_res = db.table("players").select("*").eq("telegram_id", int(user_id)).execute()
+                p_res = await _db(lambda: db.table("players").select("id,name").eq("telegram_id", int(user_id)).execute())
                 if p_res.data:
                     player_id = p_res.data[0]["id"]
                     tg_name = p_res.data[0].get("name") or tg_name
                 else:
-                    created_p = (
-                        db.table("players")
+                    created_p = await _db(
+                        lambda: db.table("players")
                         .insert(
                             {
                                 "name": tg_name,
@@ -444,13 +471,13 @@ async def signup_user(payload: SignupSchema, user: dict = Depends(get_current_us
             "is_paid": False,
         }
         try:
-            db.table("signups").insert(row).execute()
+            await _db(lambda: db.table("signups").insert(row).execute())
         except Exception:
             row.pop("player_id", None)
             row.pop("user_name", None)
-            db.table("signups").insert(row).execute()
+            await _db(lambda: db.table("signups").insert(row).execute())
 
-        await _sync_announcement_message(db, game_id)
+        _schedule_background(_sync_announcement_message(game_id))
         return {"success": True, "status": signup_status}
 
     except HTTPException:
@@ -466,7 +493,7 @@ async def admin_add_signup(payload: AdminAddSignupSchema, user: dict = Depends(g
     db = get_db()
 
     try:
-        game_res = db.table("games").select("*").eq("id", payload.game_id).execute()
+        game_res = await _db(lambda: db.table("games").select("*").eq("id", payload.game_id).execute())
         if not game_res.data:
             raise HTTPException(status_code=404, detail="Game not found")
         game = game_res.data[0]
@@ -476,7 +503,7 @@ async def admin_add_signup(payload: AdminAddSignupSchema, user: dict = Depends(g
 
         player_record = None
         if payload.player_id:
-            p_res = db.table("players").select("*").eq("id", payload.player_id).execute()
+            p_res = await _db(lambda: db.table("players").select("*").eq("id", payload.player_id).execute())
             if not p_res.data:
                 raise HTTPException(status_code=404, detail="Игрок не найден в базе")
             player_record = p_res.data[0]
@@ -488,12 +515,12 @@ async def admin_add_signup(payload: AdminAddSignupSchema, user: dict = Depends(g
                 telegram_username=payload.telegram_username,
             )
             if validated.telegram_id is not None:
-                dup = db.table("players").select("*").eq("telegram_id", validated.telegram_id).execute()
+                dup = await _db(lambda: db.table("players").select("*").eq("telegram_id", validated.telegram_id).execute())
                 if dup.data:
                     player_record = dup.data[0]
             if not player_record:
-                ins = (
-                    db.table("players")
+                ins = await _db(
+                    lambda: db.table("players")
                     .insert(
                         {
                             "name": validated.name,
@@ -508,15 +535,9 @@ async def admin_add_signup(payload: AdminAddSignupSchema, user: dict = Depends(g
                     raise HTTPException(status_code=500, detail="Не удалось создать игрока в базе")
                 player_record = ins.data[0]
 
-        signups_res = (
-            db.table("signups")
-            .select("*")
-            .eq("game_id", payload.game_id)
-            .execute()
-        )
+        signups_res = await _db(lambda: db.table("signups").select("*").eq("game_id", payload.game_id).execute())
         existing_signups = signups_res.data or []
 
-        # Проверяем, не записан ли уже этот игрок в матч
         already_in_game = any(
             (s.get("player_id") and str(s.get("player_id")) == str(player_record["id"]))
             or (
@@ -548,13 +569,13 @@ async def admin_add_signup(payload: AdminAddSignupSchema, user: dict = Depends(g
             "is_paid": bool(payload.is_paid),
         }
         try:
-            db.table("signups").insert(insert_data).execute()
+            await _db(lambda: db.table("signups").insert(insert_data).execute())
         except Exception:
             insert_data.pop("player_id", None)
             insert_data.pop("user_name", None)
-            db.table("signups").insert(insert_data).execute()
+            await _db(lambda: db.table("signups").insert(insert_data).execute())
 
-        await _sync_announcement_message(db, payload.game_id)
+        _schedule_background(_sync_announcement_message(payload.game_id))
         return {"success": True, "status": signup_status, "player": player_record}
 
     except HTTPException:
@@ -572,19 +593,19 @@ async def toggle_signup_payment(signup_id: str, payload: TogglePaySchema, user: 
     db = get_db()
 
     try:
-        s_res = db.table("signups").select("*").eq("id", signup_id).execute()
+        s_res = await _db(lambda: db.table("signups").select("id,game_id").eq("id", signup_id).execute())
         if not s_res.data:
             raise HTTPException(status_code=404, detail="Signup not found")
         signup = s_res.data[0]
 
-        game_res = db.table("games").select("*").eq("id", signup["game_id"]).execute()
+        game_res = await _db(lambda: db.table("games").select("*").eq("id", signup["game_id"]).execute())
         if not game_res.data:
             raise HTTPException(status_code=404, detail="Game not found")
 
         if not await _check_game_admin(game_res.data[0], user_id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin rights required")
 
-        db.table("signups").update({"is_paid": bool(payload.is_paid)}).eq("id", signup_id).execute()
+        await _db(lambda: db.table("signups").update({"is_paid": bool(payload.is_paid)}).eq("id", signup_id).execute())
         return {"success": True, "is_paid": bool(payload.is_paid)}
 
     except HTTPException:
@@ -600,13 +621,17 @@ async def admin_remove_signup(signup_id: str, user: dict = Depends(get_current_u
     db = get_db()
 
     try:
-        s_res = db.table("signups").select("*").eq("id", signup_id).execute()
+        s_res = await _db(lambda: db.table("signups").select("id,game_id").eq("id", signup_id).execute())
         if not s_res.data:
             raise HTTPException(status_code=404, detail="Signup not found")
         signup = s_res.data[0]
         game_id = signup["game_id"]
 
-        game_res = db.table("games").select("*").eq("id", game_id).execute()
+        game_res, all_res = await asyncio.gather(
+            _db(lambda: db.table("games").select("max_players,group_id,chat_id").eq("id", game_id).execute()),
+            _db(lambda: db.table("signups").select("id,status").eq("game_id", game_id).order("created_at", desc=False).execute()),
+        )
+
         if not game_res.data:
             raise HTTPException(status_code=404, detail="Game not found")
         game = game_res.data[0]
@@ -614,24 +639,17 @@ async def admin_remove_signup(signup_id: str, user: dict = Depends(get_current_u
         if not await _check_game_admin(game, user_id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin rights required")
 
-        db.table("signups").delete().eq("id", signup_id).execute()
+        await _db(lambda: db.table("signups").delete().eq("id", signup_id).execute())
 
         max_players = game.get("max_players") or 0
-        all_res = (
-            db.table("signups")
-            .select("*")
-            .eq("game_id", game_id)
-            .order("created_at", desc=False)
-            .execute()
-        )
-        all_signups = all_res.data or []
-        main_list = [s for s in all_signups if s.get("status") == "main"]
-        reserve_list = [s for s in all_signups if s.get("status") == "reserve"]
+        remaining = [s for s in (all_res.data or []) if str(s.get("id")) != str(signup_id)]
+        main_list = [s for s in remaining if s.get("status") == "main"]
+        reserve_list = [s for s in remaining if s.get("status") == "reserve"]
 
         if len(main_list) < max_players and reserve_list:
-            db.table("signups").update({"status": "main"}).eq("id", reserve_list[0]["id"]).execute()
+            await _db(lambda: db.table("signups").update({"status": "main"}).eq("id", reserve_list[0]["id"]).execute())
 
-        await _sync_announcement_message(db, game_id)
+        _schedule_background(_sync_announcement_message(game_id))
         return {"success": True}
 
     except HTTPException:

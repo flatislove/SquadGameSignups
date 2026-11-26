@@ -82,7 +82,7 @@ export async function initSignups() {
     };
 
     let gameId = resolveAnnouncementGameId();
-    let cachedDbPlayers = [];
+    let cachedDbPlayers = null;
     let currentGameMeta = { mainCount: 0, reserveCount: 0, maxPlayers: 0 };
 
     function updatePaymentSummaryText() {
@@ -146,8 +146,9 @@ export async function initSignups() {
     function renderDbPlayersList(query = '') {
         if (!refs.dbPlayersList) return;
         const q = query.trim().toLowerCase();
+        const sourceList = Array.isArray(cachedDbPlayers) ? cachedDbPlayers : [];
 
-        const sorted = [...cachedDbPlayers].sort((a, b) =>
+        const sorted = [...sourceList].sort((a, b) =>
             String(a.name || '').localeCompare(String(b.name || ''), 'ru', { sensitivity: 'base' })
         );
 
@@ -192,14 +193,14 @@ export async function initSignups() {
 
         refs.dbPlayersList.querySelectorAll('.edit-db-player').forEach((btn) => {
             btn.onclick = () => {
-                const target = cachedDbPlayers.find((item) => String(item.id) === String(btn.dataset.id));
+                const target = sourceList.find((item) => String(item.id) === String(btn.dataset.id));
                 if (target) openNewPlayerForm(target);
             };
         });
 
         refs.dbPlayersList.querySelectorAll('.add-db-player').forEach((btn) => {
             btn.onclick = async () => {
-                if (!gameId) return;
+                if (!gameId || btn.disabled) return;
                 btn.disabled = true;
                 try {
                     await apiFetch('/api/signups/admin-add', {
@@ -222,8 +223,12 @@ export async function initSignups() {
         });
     }
 
-    async function loadDbPlayers() {
+    async function loadDbPlayers(forceRefresh = false) {
         if (!refs.dbPlayersList) return;
+        if (Array.isArray(cachedDbPlayers) && !forceRefresh) {
+            renderDbPlayersList(refs.playerSearchInput?.value || '');
+            return;
+        }
         refs.dbPlayersList.innerHTML = '<div style="color: gray; font-size: 13px; padding: 10px;">Загрузка...</div>';
         try {
             const res = await apiFetch('/api/signups/players');
@@ -233,6 +238,44 @@ export async function initSignups() {
             console.error('Ошибка загрузки базы игроков:', err);
             refs.dbPlayersList.innerHTML = `<div style="color: #d9534f; font-size: 13px; padding: 10px;">Ошибка загрузки базы: ${escapeHtml(err.message)}</div>`;
         }
+    }
+
+    if (refs.action) {
+        refs.action.onclick = async () => {
+            if (!gameId || refs.action.disabled) return;
+            refs.action.disabled = true;
+            try {
+                const res = await apiFetch('/api/signups', {
+                    method: 'POST',
+                    body: JSON.stringify({ game_id: gameId })
+                });
+                if (res?.success && tg?.showAlert) {
+                    tg.showAlert(`✅ Вы записаны (${res.status === 'main' ? 'Основной состав' : 'Резерв'})!`);
+                }
+                await loadData();
+            } catch (err) {
+                console.error('Ошибка записи:', err);
+                if (tg?.showAlert) tg.showAlert(`❌ Ошибка записи: ${err.message}`);
+            } finally {
+                refs.action.disabled = false;
+            }
+        };
+    }
+
+    if (refs.cancel) {
+        refs.cancel.onclick = async () => {
+            if (!gameId || refs.cancel.disabled) return;
+            refs.cancel.disabled = true;
+            try {
+                await apiFetch(`/api/signups?game_id=${encodeURIComponent(gameId)}`, { method: 'DELETE' });
+                await loadData();
+            } catch (err) {
+                console.error('Ошибка отмены записи:', err);
+                if (tg?.showAlert) tg.showAlert(`❌ Ошибка отмены: ${err.message}`);
+            } finally {
+                refs.cancel.disabled = false;
+            }
+        };
     }
 
     async function loadData() {
@@ -297,40 +340,10 @@ export async function initSignups() {
 
             if (refs.action) {
                 refs.action.style.display = data.status === 'not_registered' ? 'block' : 'none';
-                refs.action.onclick = async () => {
-                    refs.action.disabled = true;
-                    try {
-                        const res = await apiFetch('/api/signups', {
-                            method: 'POST',
-                            body: JSON.stringify({ game_id: gameId })
-                        });
-                        if (res?.success && tg?.showAlert) {
-                            tg.showAlert(`✅ Вы записаны (${res.status === 'main' ? 'Основной состав' : 'Резерв'})!`);
-                        }
-                        await loadData();
-                    } catch (err) {
-                        console.error('Ошибка записи:', err);
-                        if (tg?.showAlert) tg.showAlert(`❌ Ошибка записи: ${err.message}`);
-                    } finally {
-                        refs.action.disabled = false;
-                    }
-                };
             }
 
             if (refs.cancel) {
                 refs.cancel.style.display = data.status !== 'not_registered' ? 'block' : 'none';
-                refs.cancel.onclick = async () => {
-                    refs.cancel.disabled = true;
-                    try {
-                        await apiFetch(`/api/signups?game_id=${encodeURIComponent(gameId)}`, { method: 'DELETE' });
-                        await loadData();
-                    } catch (err) {
-                        console.error('Ошибка отмены записи:', err);
-                        if (tg?.showAlert) tg.showAlert(`❌ Ошибка отмены: ${err.message}`);
-                    } finally {
-                        refs.cancel.disabled = false;
-                    }
-                };
             }
 
             if (refs.adminPanel) {
@@ -457,7 +470,7 @@ export async function initSignups() {
             if (refs.dbSelectIsPaid) refs.dbSelectIsPaid.checked = false;
             switchModalMode('db');
             refs.modal.style.display = 'flex';
-            await loadDbPlayers();
+            await loadDbPlayers(false);
         };
     }
 
@@ -465,7 +478,7 @@ export async function initSignups() {
         refs.tabDbPlayers.onclick = async () => {
             if (refs.modalTitle) refs.modalTitle.textContent = 'Добавить игрока';
             switchModalMode('db');
-            await loadDbPlayers();
+            await loadDbPlayers(false);
         };
     }
 
@@ -519,7 +532,7 @@ export async function initSignups() {
                     if (tg?.showAlert) tg.showAlert('✅ Данные игрока обновлены!');
                     switchModalMode('db');
                     if (refs.modalTitle) refs.modalTitle.textContent = 'Добавить игрока';
-                    await loadDbPlayers();
+                    await loadDbPlayers(true);
                     await loadData();
                     return;
                 }
@@ -544,7 +557,7 @@ export async function initSignups() {
                     if (tg?.showAlert) tg.showAlert('✅ Игрок сохранён в базу!');
                     switchModalMode('db');
                     if (refs.modalTitle) refs.modalTitle.textContent = 'Добавить игрока';
-                    await loadDbPlayers();
+                    await loadDbPlayers(true);
                 }
             } catch (err) {
                 console.error('Ошибка сохранения/добавления игрока:', err);

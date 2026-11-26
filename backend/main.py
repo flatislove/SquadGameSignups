@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from telegram import Request
+from telegram.request import HTTPXRequest
 from telegram.ext import Application, CommandHandler, ChatMemberHandler, filters
 from httpx import ReadTimeout, ConnectTimeout, PoolTimeout
 
@@ -34,6 +34,13 @@ async def lifespan(app: FastAPI):
     # Initialize Telegram Bot Application with custom timeouts
     if settings.BOT_TOKEN:
         # Create a custom Request object with configured timeouts
+        # Create a custom Request object with configured timeouts
+        telegram_request = HTTPXRequest(
+            connect_timeout=15.0,
+            read_timeout=25.0,
+            write_timeout=15.0,
+            pool_timeout=15.0
+        )
         telegram_request = Request(
             connect_timeout=15.0,
             read_timeout=25.0,

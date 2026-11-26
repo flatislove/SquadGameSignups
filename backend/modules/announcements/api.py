@@ -110,3 +110,15 @@ async def get_game(game_id: str):
         logger.error(f"Error fetching game {game_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@router.get("/latest")
+async def get_latest_game():
+    db = get_db()
+    try:
+        res = db.table("games").select("*").eq("status", "active").order("created_at", desc=True).limit(1).execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="No active games found")
+        return res.data[0]
+    except Exception as e:
+        logger.error(f"Error fetching latest game: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+

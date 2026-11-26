@@ -52,13 +52,13 @@ def build_announcement_text(
     time_end = _format_hm(str(game_data.get("time_end") or ""))
 
     if time_start and time_end:
-        time_part = f" ({time_start} - {time_end})"
+        time_label = f"{time_start} - {time_end}"
     elif time_start:
-        time_part = f" ({time_start})"
+        time_label = time_start
     else:
-        time_part = ""
+        time_label = ""
 
-    date_line = f"📅 {escape(f'{date_label}{time_part}')}"
+    date_line = f"📅 {escape(date_label)}"
 
     loc_name = escape(str(game_data.get("loc_name") or "Уточняется").strip())
     loc_link = str(game_data.get("loc_link") or "").strip()
@@ -79,9 +79,13 @@ def build_announcement_text(
         "🏐 Volleyball",
         "",
         date_line,
+    ]
+    if time_label:
+        lines.append(f"🕒 {escape(time_label)}")
+    lines.extend([
         location_line,
         f"💰 {cost}",
-    ]
+    ])
     if org_part:
         lines.append(f"👤 {escape(org_part)}")
     lines.extend([

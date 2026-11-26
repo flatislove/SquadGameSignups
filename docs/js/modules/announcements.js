@@ -8,14 +8,18 @@ export function initAnnouncements() {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
+        const venueSelect = document.getElementById('venueSelect');
+        const selectedOption = venueSelect ? venueSelect.options[venueSelect.selectedIndex] : null;
+
         const payload = {
             chat_id: parseInt(document.getElementById('chatSelect').value),
             date: document.getElementById('gameDate').value,
             time: document.getElementById('startTime').value,
             end_time: document.getElementById('endTime').value,
             publish_time: document.getElementById('publishTime').value,
-            loc_name: document.getElementById('locName').value,
-            loc_link: document.getElementById('locLink').value,
+            venue_id: venueSelect ? venueSelect.value : null,
+            loc_name: selectedOption ? selectedOption.textContent : null,
+            loc_link: selectedOption ? selectedOption.dataset.mapUrl : null,
             cost: document.getElementById('cost').value,
             max_players: parseInt(document.getElementById('maxPlayers').value),
             name: document.getElementById('orgName').value,
@@ -39,9 +43,7 @@ export function initAnnouncements() {
                     navigator.clipboard.writeText(deepLink).catch(() => {});
                 }
 
-                tg.showAlert(message, () => {
-                    // Optional callback after alert closed
-                });
+                tg.showAlert(message, () => {});
             } else {
                 tg.showAlert("❌ Ошибка при создании анонса.");
             }
@@ -51,4 +53,5 @@ export function initAnnouncements() {
         }
     });
 }
+
 

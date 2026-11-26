@@ -18,9 +18,11 @@ def register_all_routers(app):
     from backend.modules.announcements.api import router as announcements_router
     from backend.modules.signups.api import router as signups_router
     from backend.modules.payments.api import router as payments_router
+    from backend.modules.venues.api import router as venues_router
 
     app.include_router(groups_router)
     app.include_router(announcements_router)
     app.include_router(signups_router)
     app.include_router(payments_router)
+    app.include_router(venues_router)
 

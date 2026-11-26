@@ -15,8 +15,9 @@ class GameCreateSchema(BaseModel):
     time: str # time_start
     end_time: str
     publish_time: str = "now"
-    loc_name: str
-    loc_link: str
+    venue_id: str | None = None
+    loc_name: str | None = None
+    loc_link: str | None = None
     cost: str
     max_players: int = 12
     name: str # org_name
@@ -40,13 +41,25 @@ async def create_game(payload: GameCreateSchema, user: dict = Depends(get_curren
     db = get_db()
     
     try:
+        loc_name = payload.loc_name or ""
+        loc_link = payload.loc_link or ""
+        venue_id = payload.venue_id
+
+        if venue_id:
+            venue_res = db.table("venues").select("*").eq("id", venue_id).execute()
+            if venue_res.data:
+                v = venue_res.data[0]
+                loc_name = v["name"]
+                loc_link = v["map_url"]
+
         game_insert = {
             "group_id": payload.chat_id,
             "date": payload.date,
             "time_start": payload.time,
             "time_end": payload.end_time,
-            "loc_name": payload.loc_name,
-            "loc_link": str(payload.loc_link),
+            "venue_id": venue_id,
+            "loc_name": loc_name,
+            "loc_link": str(loc_link),
             "cost": payload.cost,
             "max_players": payload.max_players,
             "org_name": payload.name,
@@ -73,7 +86,6 @@ async def create_game(payload: GameCreateSchema, user: dict = Depends(get_curren
             if msg_id:
                 db.table("games").update({"message_id": msg_id}).eq("id", game_id).execute()
         else:
-            # Schedule announcement via scheduler if needed
             pass
 
         return {"success": True, "game_id": game_id}
@@ -97,3 +109,4 @@ async def get_game(game_id: str):
     except Exception as e:
         logger.error(f"Error fetching game {game_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+

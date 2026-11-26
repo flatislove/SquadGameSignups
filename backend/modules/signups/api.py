@@ -57,6 +57,32 @@ async def get_signup_status(game_id: str, user: dict = Depends(get_current_user)
         logger.error(f"Error getting signup status for game {game_id}, user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@router.delete("")
+async def cancel_signup(game_id: str, user: dict = Depends(get_current_user)):
+    user_id = user.get("id")
+    db = get_db()
+
+    try:
+        db.table("signups").delete().eq("game_id", game_id).eq("user_id", user_id).execute()
+        
+        game_res = db.table("games").select("max_players").eq("id", game_id).execute()
+        if game_res.data:
+            max_players = game_res.data[0]["max_players"]
+            signups_res = db.table("signups").select("*").eq("game_id", game_id).order("created_at", desc=False).execute()
+            all_signups = signups_res.data or []
+
+            main_list = [s for s in all_signups if s["status"] == "main"]
+            reserve_list = [s for s in all_signups if s["status"] == "reserve"]
+
+            if len(main_list) < max_players and reserve_list:
+                first_reserve = reserve_list[0]
+                db.table("signups").update({"status": "main"}).eq("id", first_reserve["id"]).execute()
+
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Error cancelling signup for user {user_id} in game {game_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.post("")
 async def signup_user(payload: SignupSchema, user: dict = Depends(get_current_user)):
     user_id = user.get("id")

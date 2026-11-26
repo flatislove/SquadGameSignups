@@ -3,19 +3,32 @@ import { apiFetch } from '../core/api.js';
 
 export async function initSignups() {
     const gameId = window.CURRENT_GAME_ID;
-    const userInfoEl = document.getElementById('user-info');
+    const gameDetailsEl = document.getElementById('game-details');
     const statusContainer = document.getElementById('status-container');
     const statusText = document.getElementById('status-text');
     const paymentText = document.getElementById('payment-text');
     const actionBtn = document.getElementById('action-btn');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const copyLinkBtn = document.getElementById('copy-link-btn');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const playersContainer = document.getElementById('players-container');
+    const totalCountEl = document.getElementById('total-count');
+    const maxCountEl = document.getElementById('max-count');
+    const adminPanelContainer = document.getElementById('admin-panel-container');
+    const openAddPlayerModalBtn = document.getElementById('open-add-player-modal');
+    
+    const playerModal = document.getElementById('playerModal');
+    const closePlayerModalBtn = document.getElementById('close-player-modal');
+    const playerForm = document.getElementById('playerForm');
+    const modalTitle = document.getElementById('modal-title');
+    const modalUserId = document.getElementById('modalUserId');
+    const modalUserName = document.getElementById('modalUserName');
+    const modalUserPhone = document.getElementById('modalUserPhone');
 
     if (!gameId) {
-        if (userInfoEl) userInfoEl.innerText = "⚠️ Не указан ID игры в ссылке startapp.";
+        if (gameDetailsEl) gameDetailsEl.innerHTML = "⚠️ Не указан ID игры в ссылке startapp.";
         return;
     }
-
-    const user = tg.initDataUnsafe?.user || { first_name: "Игрок" };
-    if (userInfoEl) userInfoEl.innerText = `Привет, ${user.first_name || 'Игрок'}!`;
 
     try {
         const data = await apiFetch(`/api/signups/status?game_id=${gameId}`);

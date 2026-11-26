@@ -1,39 +1,36 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
+from html import escape
 import logging
-from urllib.parse import quote
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.error import TelegramError
 
 logger = logging.getLogger(__name__)
 
 
-def _build_date_time_url(game_data: dict) -> str:
-    explicit_link = (
-        game_data.get("time_link")
-        or game_data.get("date_link")
-        or game_data.get("calendar_link")
-        or ""
-    ).strip()
-    if explicit_link.startswith(("http://", "https://")):
-        return explicit_link
-
+def _parse_start_unix_timestamp(game_data: dict) -> int | None:
     date_str = str(game_data.get("date") or "").strip()
     time_start = str(game_data.get("time_start") or "").strip()
-    time_end = str(game_data.get("time_end") or time_start).strip()
+    if not date_str:
+        return None
 
-    try:
-        dt_start = datetime.strptime(f"{date_str} {time_start[:5]}", "%Y-%m-%d %H:%M")
-        dt_end = datetime.strptime(f"{date_str} {time_end[:5]}", "%Y-%m-%d %H:%M")
-        if dt_end <= dt_start:
-            dt_end = dt_start + timedelta(hours=1, minutes=30)
-        fmt = "%Y%m%dT%H%M%S"
-        title = quote(f"Volleyball — {game_data.get('loc_name') or 'Матч'}")
-        return (
-            f"https://calendar.google.com/calendar/render?action=TEMPLATE"
-            f"&text={title}&dates={dt_start.strftime(fmt)}/{dt_end.strftime(fmt)}"
-        )
-    except Exception:
-        return "https://calendar.google.com"
+    candidates = []
+    if time_start:
+        hm = time_start[:5]
+        candidates.append((f"{date_str} {hm}", "%Y-%m-%d %H:%M"))
+        candidates.append((f"{date_str} {time_start}", "%Y-%m-%d %H:%M:%S"))
+    candidates.append((f"{date_str} 00:00", "%Y-%m-%d %H:%M"))
+
+    # Часовой пояс по умолчанию (если в game_data нет явного смещения — используем локальный/Asia/Almaty +05)
+    tz = timezone(timedelta(hours=5))
+
+    for raw_dt, fmt in candidates:
+        try:
+            dt = datetime.strptime(raw_dt, fmt).replace(tzinfo=tz)
+            return int(dt.timestamp())
+        except ValueError:
+            continue
+
+    return None
 
 
 def build_announcement_text(
@@ -41,10 +38,11 @@ def build_announcement_text(
     main_count: int = 0,
     max_players: int | None = None,
     reserve_count: int = 0,
+    use_tg_time: bool = True,
 ) -> str:
-    date_str = game_data.get("date") or "Уточняется"
-    time_start = game_data.get("time_start") or ""
-    time_end = game_data.get("time_end") or ""
+    date_str = str(game_data.get("date") or "Уточняется").strip()
+    time_start = str(game_data.get("time_start") or "").strip()
+    time_end = str(game_data.get("time_end") or "").strip()
 
     if time_start and time_end:
         time_part = f" ({time_start} - {time_end})"
@@ -53,24 +51,28 @@ def build_announcement_text(
     else:
         time_part = ""
 
-    date_label = f"{date_str}{time_part}"
-    date_url = _build_date_time_url(game_data)
-    date_line = f"📅 [{date_label}]({date_url})"
+    fallback_date_text = escape(f"{date_str}{time_part}")
+    unix_ts = _parse_start_unix_timestamp(game_data) if use_tg_time else None
 
-    loc_name = game_data.get("loc_name") or "Уточняется"
-    loc_link = (game_data.get("loc_link") or "").strip()
+    if unix_ts is not None:
+        date_line = f'📅 <tg-time unix="{unix_ts}" format="wDt">{fallback_date_text}</tg-time>'
+    else:
+        date_line = f"📅 {fallback_date_text}"
+
+    loc_name = escape(str(game_data.get("loc_name") or "Уточняется").strip())
+    loc_link = str(game_data.get("loc_link") or "").strip()
     if loc_link.startswith(("http://", "https://")):
-        location_line = f"📍 [{loc_name}]({loc_link})"
+        location_line = f'📍 <a href="{escape(loc_link, quote=True)}">{loc_name}</a>'
     else:
         location_line = f"📍 {loc_name}"
 
-    cost = game_data.get("cost") or "Бесплатно"
-    org_name = game_data.get("org_name") or ""
-    org_phone = game_data.get("org_phone") or ""
+    cost = escape(str(game_data.get("cost") or "Бесплатно").strip())
+    org_name = str(game_data.get("org_name") or "").strip()
+    org_phone = str(game_data.get("org_phone") or "").strip()
     org_part = f"{org_name} ({org_phone})" if org_phone else org_name
 
     limit = max_players if max_players is not None else (game_data.get("max_players") or 0)
-    roster_line = f"{main_count}/{limit} Список; {reserve_count} резерв"
+    roster_line = escape(f"{main_count}/{limit} Список; {reserve_count} резерв")
 
     lines = [
         "🏐 Volleyball",
@@ -80,7 +82,7 @@ def build_announcement_text(
         f"💰 {cost}",
     ]
     if org_part:
-        lines.append(f"👤 {org_part}")
+        lines.append(f"👤 {escape(org_part)}")
     lines.extend([
         "",
         roster_line,
@@ -131,6 +133,7 @@ class TelegramGateway:
             main_count=main_count,
             max_players=game_data.get("max_players"),
             reserve_count=reserve_count,
+            use_tg_time=True,
         )
         reply_markup = self.build_markup(game_id=game_id, bot_username=bot_username)
 
@@ -139,7 +142,7 @@ class TelegramGateway:
                 chat_id=chat_id,
                 text=text,
                 reply_markup=reply_markup,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 disable_web_page_preview=True,
             )
             logger.info(
@@ -147,6 +150,28 @@ class TelegramGateway:
             )
             return msg.message_id
         except TelegramError as te:
+            # Фолбэк без <tg-time>, если сервер/версия API не поддерживает тег даты/времени
+            if "<tg-time" in text:
+                logger.warning(f"Retrying announcement without <tg-time> for game {game_id}: {te}")
+                fallback_text = build_announcement_text(
+                    game_data=game_data,
+                    main_count=main_count,
+                    max_players=game_data.get("max_players"),
+                    reserve_count=reserve_count,
+                    use_tg_time=False,
+                )
+                try:
+                    msg = await self._bot.send_message(
+                        chat_id=chat_id,
+                        text=fallback_text,
+                        reply_markup=reply_markup,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                    return msg.message_id
+                except Exception as fallback_err:
+                    logger.error(f"Fallback send failed for game {game_id}: {fallback_err}")
+                    return None
             logger.error(f"Telegram error sending announcement to chat {chat_id}: {te}")
             return None
         except Exception as e:
@@ -171,6 +196,7 @@ class TelegramGateway:
             main_count=main_count,
             max_players=game_data.get("max_players"),
             reserve_count=reserve_count,
+            use_tg_time=True,
         )
         reply_markup = self.build_markup(game_id=game_id, bot_username=bot_username)
 
@@ -180,13 +206,35 @@ class TelegramGateway:
                 message_id=message_id,
                 text=text,
                 reply_markup=reply_markup,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 disable_web_page_preview=True,
             )
             return True
         except TelegramError as te:
             if "message is not modified" in str(te).lower():
                 return True
+            if "<tg-time" in text:
+                fallback_text = build_announcement_text(
+                    game_data=game_data,
+                    main_count=main_count,
+                    max_players=game_data.get("max_players"),
+                    reserve_count=reserve_count,
+                    use_tg_time=False,
+                )
+                try:
+                    await self._bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=fallback_text,
+                        reply_markup=reply_markup,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                    return True
+                except TelegramError as fte:
+                    if "message is not modified" in str(fte).lower():
+                        return True
+                    return False
             logger.warning(
                 f"Failed to edit announcement message {message_id} in chat {chat_id}: {te}"
             )

@@ -37,11 +37,26 @@ export async function initSignups() {
         players: document.getElementById('players-container'),
         adminPanel: document.getElementById('admin-panel-container'),
         modal: document.getElementById('playerModal'),
+        modalTitle: document.getElementById('playerModalTitle'),
+        tabDbPlayers: document.getElementById('tab-db-players'),
+        tabNewPlayer: document.getElementById('tab-new-player'),
+        dbPlayersPane: document.getElementById('dbPlayersPane'),
+        newPlayerPane: document.getElementById('newPlayerPane'),
+        playerSearchInput: document.getElementById('playerSearchInput'),
+        dbSelectIsPaid: document.getElementById('dbSelectIsPaid'),
+        dbPlayersList: document.getElementById('dbPlayersList'),
+        closeModalDbBtn: document.getElementById('close-player-modal-db'),
         form: document.getElementById('playerForm'),
         openModalBtn: document.getElementById('open-add-player-modal'),
         closeModalBtn: document.getElementById('close-player-modal'),
+        editPlayerId: document.getElementById('editPlayerId'),
         modalUserName: document.getElementById('modalUserName'),
-        modalUserPhone: document.getElementById('modalUserPhone'),
+        modalUserGender: document.getElementById('modalUserGender'),
+        modalTelegramId: document.getElementById('modalTelegramId'),
+        modalTelegramUsername: document.getElementById('modalTelegramUsername'),
+        addToMatchOptionGroup: document.getElementById('addToMatchOptionGroup'),
+        modalAddToMatch: document.getElementById('modalAddToMatch'),
+        modalIsPaidGroup: document.getElementById('modalIsPaidGroup'),
         modalIsPaid: document.getElementById('modalIsPaid'),
         receiptModal: document.getElementById('receiptModal'),
         receiptFileInput: document.getElementById('receiptFileInput'),
@@ -50,6 +65,132 @@ export async function initSignups() {
     };
 
     let gameId = window.CURRENT_GAME_ID;
+    let cachedDbPlayers = [];
+
+    function switchModalMode(mode) {
+        const isDb = mode === 'db';
+        if (refs.tabDbPlayers) refs.tabDbPlayers.classList.toggle('active', isDb);
+        if (refs.tabNewPlayer) refs.tabNewPlayer.classList.toggle('active', !isDb);
+        if (refs.dbPlayersPane) refs.dbPlayersPane.style.display = isDb ? 'block' : 'none';
+        if (refs.newPlayerPane) refs.newPlayerPane.style.display = isDb ? 'none' : 'block';
+    }
+
+    function openNewPlayerForm(playerToEdit = null) {
+        switchModalMode('new');
+        if (playerToEdit) {
+            if (refs.modalTitle) refs.modalTitle.textContent = 'Редактировать игрока';
+            if (refs.editPlayerId) refs.editPlayerId.value = playerToEdit.id || '';
+            if (refs.modalUserName) refs.modalUserName.value = playerToEdit.name || '';
+            if (refs.modalUserGender) refs.modalUserGender.value = playerToEdit.gender || 'male';
+            if (refs.modalTelegramId) refs.modalTelegramId.value = playerToEdit.telegram_id ?? '';
+            if (refs.modalTelegramUsername) {
+                refs.modalTelegramUsername.value = playerToEdit.telegram_username
+                    ? `@${String(playerToEdit.telegram_username).replace(/^@/, '')}`
+                    : '';
+            }
+            if (refs.addToMatchOptionGroup) refs.addToMatchOptionGroup.style.display = 'none';
+            if (refs.modalIsPaidGroup) refs.modalIsPaidGroup.style.display = 'none';
+        } else {
+            if (refs.modalTitle) refs.modalTitle.textContent = 'Новый игрок';
+            if (refs.editPlayerId) refs.editPlayerId.value = '';
+            if (refs.modalUserName) refs.modalUserName.value = '';
+            if (refs.modalUserGender) refs.modalUserGender.value = 'male';
+            if (refs.modalTelegramId) refs.modalTelegramId.value = '';
+            if (refs.modalTelegramUsername) refs.modalTelegramUsername.value = '';
+            if (refs.addToMatchOptionGroup) refs.addToMatchOptionGroup.style.display = 'block';
+            if (refs.modalAddToMatch) refs.modalAddToMatch.checked = true;
+            if (refs.modalIsPaidGroup) refs.modalIsPaidGroup.style.display = 'block';
+            if (refs.modalIsPaid) refs.modalIsPaid.value = 'false';
+        }
+    }
+
+    function renderDbPlayersList(query = '') {
+        if (!refs.dbPlayersList) return;
+        const q = query.trim().toLowerCase();
+
+        const sorted = [...cachedDbPlayers].sort((a, b) =>
+            String(a.name || '').localeCompare(String(b.name || ''), 'ru', { sensitivity: 'base' })
+        );
+
+        const filtered = q
+            ? sorted.filter((p) => {
+                  const name = String(p.name || '').toLowerCase();
+                  const uname = String(p.telegram_username || '').toLowerCase();
+                  const tgId = String(p.telegram_id || '');
+                  return name.includes(q) || uname.includes(q) || tgId.includes(q);
+              })
+            : sorted;
+
+        if (filtered.length === 0) {
+            refs.dbPlayersList.innerHTML =
+                '<div style="color: gray; font-size: 13px; padding: 10px; text-align: center;">Игроки не найдены. Создайте нового во вкладке «Новый игрок».</div>';
+            return;
+        }
+
+        refs.dbPlayersList.innerHTML = '';
+        filtered.forEach((p) => {
+            const row = document.createElement('div');
+            row.className = 'db-player-row';
+
+            const genderIcon = p.gender === 'female' ? '👩' : '👨';
+            const metaParts = [];
+            if (p.telegram_username) metaParts.push(`@${escapeHtml(p.telegram_username)}`);
+            if (p.telegram_id) metaParts.push(`ID: ${escapeHtml(p.telegram_id)}`);
+            if (metaParts.length === 0) metaParts.push('TG не привязан');
+
+            row.innerHTML = `
+                <div style="overflow: hidden;">
+                    <div style="font-weight: 600;">${genderIcon} ${escapeHtml(p.name)}</div>
+                    <div class="db-player-meta">${metaParts.join(' • ')}</div>
+                </div>
+                <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                    <button type="button" class="btn-secondary btn-sm edit-db-player" data-id="${escapeHtml(p.id)}" title="Редактировать">✏️</button>
+                    <button type="button" class="btn-sm add-db-player" data-id="${escapeHtml(p.id)}">➕</button>
+                </div>
+            `;
+            refs.dbPlayersList.appendChild(row);
+        });
+
+        refs.dbPlayersList.querySelectorAll('.edit-db-player').forEach((btn) => {
+            btn.onclick = () => {
+                const target = cachedDbPlayers.find((item) => String(item.id) === String(btn.dataset.id));
+                if (target) openNewPlayerForm(target);
+            };
+        });
+
+        refs.dbPlayersList.querySelectorAll('.add-db-player').forEach((btn) => {
+            btn.onclick = async () => {
+                try {
+                    await apiFetch('/api/signups/admin-add', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            game_id: gameId,
+                            player_id: btn.dataset.id,
+                            is_paid: Boolean(refs.dbSelectIsPaid?.checked)
+                        })
+                    });
+                    if (refs.modal) refs.modal.style.display = 'none';
+                    await loadData();
+                } catch (err) {
+                    console.error('Ошибка добавления игрока из базы:', err);
+                    if (tg?.showAlert) tg.showAlert(`❌ ${err.message}`);
+                }
+            };
+        });
+    }
+
+    async function loadDbPlayers() {
+        if (!refs.dbPlayersList) return;
+        refs.dbPlayersList.innerHTML = '<div style="color: gray; font-size: 13px; padding: 10px;">Загрузка...</div>';
+        try {
+            const res = await apiFetch('/api/signups/players');
+            cachedDbPlayers = Array.isArray(res?.players) ? res.players : [];
+            renderDbPlayersList(refs.playerSearchInput?.value || '');
+        } catch (err) {
+            console.error('Ошибка загрузки базы игроков:', err);
+            refs.dbPlayersList.innerHTML = `<div style="color: #d9534f; font-size: 13px; padding: 10px;">Ошибка загрузки базы: ${escapeHtml(err.message)}</div>`;
+        }
+    }
 
     async function loadData() {
         if (!gameId) {
@@ -251,11 +392,39 @@ export async function initSignups() {
     }
 
     if (refs.openModalBtn && refs.modal) {
-        refs.openModalBtn.onclick = () => {
-            if (refs.modalUserName) refs.modalUserName.value = '';
-            if (refs.modalUserPhone) refs.modalUserPhone.value = '';
-            if (refs.modalIsPaid) refs.modalIsPaid.value = 'false';
+        refs.openModalBtn.onclick = async () => {
+            if (refs.modalTitle) refs.modalTitle.textContent = 'Добавить игрока';
+            if (refs.playerSearchInput) refs.playerSearchInput.value = '';
+            if (refs.dbSelectIsPaid) refs.dbSelectIsPaid.checked = false;
+            switchModalMode('db');
             refs.modal.style.display = 'flex';
+            await loadDbPlayers();
+        };
+    }
+
+    if (refs.tabDbPlayers) {
+        refs.tabDbPlayers.onclick = async () => {
+            if (refs.modalTitle) refs.modalTitle.textContent = 'Добавить игрока';
+            switchModalMode('db');
+            await loadDbPlayers();
+        };
+    }
+
+    if (refs.tabNewPlayer) {
+        refs.tabNewPlayer.onclick = () => {
+            openNewPlayerForm(null);
+        };
+    }
+
+    if (refs.playerSearchInput) {
+        refs.playerSearchInput.oninput = (e) => {
+            renderDbPlayersList(e.target.value || '');
+        };
+    }
+
+    if (refs.closeModalDbBtn && refs.modal) {
+        refs.closeModalDbBtn.onclick = () => {
+            refs.modal.style.display = 'none';
         };
     }
 
@@ -268,21 +437,59 @@ export async function initSignups() {
     if (refs.form) {
         refs.form.onsubmit = async (e) => {
             e.preventDefault();
+            const editingId = refs.editPlayerId?.value?.trim();
+            const rawTgId = refs.modalTelegramId?.value?.trim();
+            const parsedTgId = rawTgId ? Number(rawTgId) : null;
+
+            const playerPayload = {
+                name: refs.modalUserName ? refs.modalUserName.value.trim() : '',
+                gender: refs.modalUserGender ? refs.modalUserGender.value : 'male',
+                telegram_id: Number.isFinite(parsedTgId) ? parsedTgId : null,
+                telegram_username: refs.modalTelegramUsername ? refs.modalTelegramUsername.value.trim() : ''
+            };
+
             try {
-                await apiFetch('/api/signups/admin-add', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        game_id: gameId,
-                        user_name: refs.modalUserName ? refs.modalUserName.value : '',
-                        user_phone: refs.modalUserPhone ? refs.modalUserPhone.value : '',
-                        is_paid: refs.modalIsPaid ? refs.modalIsPaid.value === 'true' : false
-                    })
-                });
-                if (refs.modal) refs.modal.style.display = 'none';
-                await loadData();
+                if (editingId) {
+                    await apiFetch(
+                        `/api/signups/players/${encodeURIComponent(editingId)}?game_id=${encodeURIComponent(gameId || '')}`,
+                        {
+                            method: 'PATCH',
+                            body: JSON.stringify(playerPayload)
+                        }
+                    );
+                    if (tg?.showAlert) tg.showAlert('✅ Данные игрока обновлены!');
+                    switchModalMode('db');
+                    if (refs.modalTitle) refs.modalTitle.textContent = 'Добавить игрока';
+                    await loadDbPlayers();
+                    await loadData();
+                    return;
+                }
+
+                const addToMatch = Boolean(refs.modalAddToMatch?.checked);
+                if (addToMatch && gameId) {
+                    await apiFetch('/api/signups/admin-add', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            game_id: gameId,
+                            ...playerPayload,
+                            is_paid: refs.modalIsPaid ? refs.modalIsPaid.value === 'true' : false
+                        })
+                    });
+                    if (refs.modal) refs.modal.style.display = 'none';
+                    await loadData();
+                } else {
+                    await apiFetch('/api/signups/players', {
+                        method: 'POST',
+                        body: JSON.stringify(playerPayload)
+                    });
+                    if (tg?.showAlert) tg.showAlert('✅ Игрок сохранён в базу!');
+                    switchModalMode('db');
+                    if (refs.modalTitle) refs.modalTitle.textContent = 'Добавить игрока';
+                    await loadDbPlayers();
+                }
             } catch (err) {
-                console.error('Ошибка добавления игрока:', err);
-                if (tg?.showAlert) tg.showAlert(`❌ Не удалось добавить игрока: ${err.message}`);
+                console.error('Ошибка сохранения/добавления игрока:', err);
+                if (tg?.showAlert) tg.showAlert(`❌ ${err.message}`);
             }
         };
     }

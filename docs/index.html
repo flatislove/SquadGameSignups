@@ -64,20 +64,6 @@
                 <div id="players-container">Загрузка состава...</div>
             </div>
         </div>
-        <div id="signupSection" class="section active">
-            <div id="game-details" class="game-header">Загрузка информации о матче...</div>
-            <div id="status-container" class="status-box" style="display: none;">
-                <p id="status-text" style="margin: 0 0 5px 0; font-weight: bold;"></p>
-                <p id="payment-text" style="margin: 0; font-size: 13px; color: gray;"></p>
-            </div>
-            
-            <div class="actions-row">
-                <button id="action-btn" style="display: none; flex: 2; margin-top: 10px;">Записаться</button>
-                <button id="cancel-btn" class="btn-danger" style="display: none; flex: 2; margin-top: 10px;">Отменить запись</button>
-                <button id="copy-link-btn" class="btn-secondary" style="flex: 1; margin-top: 10px;">📋 Ссылка</button>
-                <button id="refresh-btn" class="btn-secondary" style="flex: 1; margin-top: 10px;">🔄 Обновить</button>
-            </div>
-
         <div id="createSection" class="section">
             <h2>🏐 Создать анонс</h2>
             <form id="gameForm">
@@ -85,7 +71,7 @@
                 <div class="form-group"><label>Дата:</label><input type="date" id="gameDate" required></div>
                 <div class="form-group"><label>Начало:</label><input type="time" id="startTime" required></div>
                 <div class="form-group"><label>Конец:</label><input type="time" id="endTime" required></div>
-                <div class="form-group"><label>Публикация:</label><select id="publishTime"><option value="now">Сразу</option><option value="draft">Черновик</option></select></div>
+                <div class="form-group"><label>Публикация:</label><select id="publishTime"><option value="now">Сразу в группу</option><option value="draft">Только сохранить</option></select></div>
                 <div class="form-group">
                     <label>Площадка:</label>
                     <div style="display: flex; gap: 8px;">
@@ -101,97 +87,24 @@
             </form>
         </div>
         
-        <div id="modals">
-            <div id="playerModal" class="modal"><div class="modal-content">
-                <h3>Игрок</h3>
-                <form id="playerForm">
-                    <input type="hidden" id="modalUserId"><div class="form-group"><label>Имя:</label><input type="text" id="modalUserName" required></div>
-                    <div class="form-group"><label>Телефон:</label><input type="tel" id="modalUserPhone"></div>
-                    <div style="display: flex; gap: 10px;"><button type="submit">Сохранить</button><button type="button" id="close-player-modal" class="btn-secondary">Отмена</button></div>
-                </form>
-            </div></div>
-
-            <div id="venueModal" class="modal"><div class="modal-content">
-                <h3>Новая площадка</h3>
-                <form id="venueForm">
-                    <div class="form-group"><label>Название:</label><input type="text" id="venueName" required></div>
-                    <div class="form-group"><label>Карта (URL):</label><input type="url" id="venueMapUrl" required></div>
-                    <div style="display: flex; gap: 10px;"><button type="submit">Добавить</button><button type="button" id="close-venue-modal" class="btn-secondary">Отмена</button></div>
-                </form>
-            </div></div>
-        </div>
-            <div id="admin-panel-container" style="display: none; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
-                <h3>⚙️ Панель администратора</h3>
-                <button id="open-add-player-modal" class="btn-secondary">➕ Добавить игрока вручную</button>
-                <div class="form-group">
-                    <label>Площадка:</label>
-                    <div style="display: flex; gap: 8px;">
-                        <select id="venueSelect" style="flex: 3;" required><option value="">Загрузка площадок...</option></select>
-                        <button type="button" id="open-venue-modal" class="btn-secondary btn-sm" style="flex: 1; margin-top: 0;">➕</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="players-list">
-                <h3>📜 Состав участников (<span id="total-count">0</span>/<span id="max-count">0</span>)</h3>
-                <div id="players-container">Загрузка состава...</div>
-            </div>
-            <h2>Волейбольный матч</h2>
-            <div id="user-info">Загрузка данных...</div>
-            <div id="status-container" class="status-box" style="display: none;">
-                <p id="status-text"></p>
-                <p id="payment-text"></p>
-            </div>
-            <button id="action-btn" style="display: none;">Записаться</button>
-        </div>
-        <div id="createSection" class="section">
-            <h2>🏐 Создать анонс</h2>
-            <form id="gameForm">
-                <div class="form-group"><label>Группа:</label><select id="chatSelect" required><option value="">Загрузка...</option></select></div>
-                <div class="form-group"><label>Дата:</label><input type="date" id="gameDate" required></div>
-                <div class="form-group"><label>Начало:</label><input type="time" id="startTime" required></div>
-                <div class="form-group"><label>Конец:</label><input type="time" id="endTime" required></div>
-                <div class="form-group"><label>Публикация:</label><select id="publishTime" required><option value="now">Сразу</option><option value="1h">За 1 час</option></select></div>
-                <div class="form-group"><label>Площадка:</label><input type="text" id="locName" required></div>
-                <div class="form-group"><label>Карта (https://):</label><input type="url" id="locLink" required></div>
-                <div class="form-group"><label>Стоимость:</label><input type="text" id="cost" required></div>
-                <div class="form-group"><label>Максимум игроков:</label><input type="number" id="maxPlayers" value="12" min="2" max="30" required></div>
-    <!-- ADD/EDIT PLAYER MODAL -->
-    <div id="playerModal" class="modal">
-        <div class="modal-content">
-            <h3 id="modal-title">Добавить игрока</h3>
+        <div id="playerModal" class="modal"><div class="modal-content">
+            <h3>Игрок</h3>
             <form id="playerForm">
-                <input type="hidden" id="modalUserId">
-                <div class="form-group"><label>Имя и Фамилия:</label><input type="text" id="modalUserName" required></div>
-                <div class="form-group"><label>Телефон (необязательно):</label><input type="tel" id="modalUserPhone"></div>
-                <div style="display: flex; gap: 10px; margin-top: 15px;">
-                    <button type="submit" style="flex: 1; margin-top: 0;">Сохранить</button>
-                    <button type="button" id="close-player-modal" class="btn-secondary" style="flex: 1; margin-top: 0;">Отмена</button>
-                </div>
+                <input type="hidden" id="modalUserId"><div class="form-group"><label>Имя:</label><input type="text" id="modalUserName" required></div>
+                <div class="form-group"><label>Телефон:</label><input type="tel" id="modalUserPhone"></div>
+                <div style="display: flex; gap: 10px;"><button type="submit">Сохранить</button><button type="button" id="close-player-modal" class="btn-secondary">Отмена</button></div>
             </form>
-        </div>
-    </div>
+        </div></div>
 
-    <!-- ADD VENUE MODAL -->
-    <div id="venueModal" class="modal">
-        <div class="modal-content">
-            <h3>Добавить новую площадку</h3>
+        <div id="venueModal" class="modal"><div class="modal-content">
+            <h3>Новая площадка</h3>
             <form id="venueForm">
-                <div class="form-group"><label>Название площадки:</label><input type="text" id="venueName" required placeholder="Например: СК Пахтакор"></div>
-                <div class="form-group"><label>Ссылка на карту (Google/Yandex):</label><input type="url" id="venueMapUrl" required placeholder="https://maps.google.com/..."></div>
-                <div style="display: flex; gap: 10px; margin-top: 15px;">
-                    <button type="submit" style="flex: 1; margin-top: 0;">Добавить</button>
-                    <button type="button" id="close-venue-modal" class="btn-secondary" style="flex: 1; margin-top: 0;">Отмена</button>
-                </div>
+                <div class="form-group"><label>Название:</label><input type="text" id="venueName" required></div>
+                <div class="form-group"><label>Карта (URL):</label><input type="url" id="venueMapUrl" required></div>
+                <div style="display: flex; gap: 10px;"><button type="submit">Добавить</button><button type="button" id="close-venue-modal" class="btn-secondary">Отмена</button></div>
             </form>
-        </div>
-    </div>
-                <div class="form-group"><label>Организатор:</label><input type="text" id="orgName" required></div>
-                <div class="form-group"><label>Телефон:</label><input type="tel" id="orgPhone" required></div>
-                <button type="submit">Опубликовать</button>
-            </form>
-        </div>
-    </div>
+        </div></div>
+
     <script>
         function switchTab(tab, evt) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));

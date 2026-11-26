@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_KEY: str
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     TIMEZONE: str = "Asia/Tashkent"
+    SUPERUSER_TELEGRAM_IDS: str = ""
+
+    @property
+    def superuser_ids(self) -> List[int]:
+        return [int(uid.strip()) for uid in self.SUPERUSER_TELEGRAM_IDS.split(",") if uid.strip().isdigit()]
+
 
     @property
     def cors_origins_list(self) -> List[str]:

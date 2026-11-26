@@ -9,6 +9,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def is_superuser(user_id: int) -> bool:
+    """Checks if the user is a superuser based on config."""
+    return user_id in settings.superuser_ids
+
 # TTL cache for chat member admin status: {(chat_id, user_id): (is_admin, timestamp)}
 _admin_cache = {}
 CACHE_TTL = 120 # 2 minutes
@@ -89,6 +93,11 @@ async def get_current_user(x_telegram_init_data: str = Header(None)) -> dict:
             detail="X-Telegram-Init-Data header is required"
         )
     return verify_telegram_init_data(x_telegram_init_data)
+
+async def verify_chat_admin(bot, chat_id: int, user_id: int) -> bool:
+    """Checks if user is administrator or creator in the given chat, with TTL cache."""
+    if is_superuser(user_id):
+        return True
 
 async def verify_chat_admin(bot, chat_id: int, user_id: int) -> bool:
     """Checks if user is administrator or creator in the given chat, with TTL cache."""

@@ -38,7 +38,7 @@ class TelegramGateway:
             [
                 InlineKeyboardButton(
                     text="🏐 Управлять записью",
-                    web_app=WebAppInfo(url=web_app_url)
+                    url=web_app_url
                 )
             ]
         ]

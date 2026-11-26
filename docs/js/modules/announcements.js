@@ -1,11 +1,26 @@
 import { tg } from '../core/tg.js';
 import { apiFetch } from '../core/api.js';
 
-function populateChatSelect(selectEl, groups) {
+let loadSeq = 0;
+
+function hasValidOptions(selectEl) {
+    if (!selectEl) return false;
+    return Array.from(selectEl.options).some(
+        (opt) => opt.value !== '' && !Number.isNaN(Number(opt.value))
+    );
+}
+
+function populateChatSelect(selectEl, groups, { preserveExistingOnEmpty = true } = {}) {
     if (!selectEl) return;
+
+    const list = Array.isArray(groups) ? groups : [];
+    if (list.length === 0 && preserveExistingOnEmpty && hasValidOptions(selectEl)) {
+        return;
+    }
+
     selectEl.innerHTML = '';
 
-    if (!Array.isArray(groups) || groups.length === 0) {
+    if (list.length === 0) {
         const opt = document.createElement('option');
         opt.value = '';
         opt.textContent = 'Нет доступных групп';
@@ -18,7 +33,7 @@ function populateChatSelect(selectEl, groups) {
     placeholder.textContent = 'Выберите группу...';
     selectEl.appendChild(placeholder);
 
-    for (const g of groups) {
+    for (const g of list) {
         const chatId = g.group_id ?? g.chat_id ?? g.id;
         const title = g.title ?? g.name ?? `Группа ${chatId}`;
         if (chatId === undefined || chatId === null) continue;
@@ -34,16 +49,23 @@ export async function loadGroupsForForm() {
     const chatSelect = document.getElementById('chatSelect');
     if (!chatSelect) return;
 
-    chatSelect.innerHTML = '<option value="">Загрузка групп...</option>';
+    const seq = ++loadSeq;
+    const alreadyHasGroups = hasValidOptions(chatSelect);
+
+    if (!alreadyHasGroups) {
+        chatSelect.innerHTML = '<option value="">Загрузка групп...</option>';
+    }
 
     try {
         let data;
         try {
-            data = await apiFetch('/api/groups');
+            data = await apiFetch('/api/groups/admin-chats');
         } catch (err) {
-            console.warn('[announcements] /api/groups failed, fallback to /api/me/context:', err);
+            console.warn('[announcements] /api/groups/admin-chats failed, fallback to /api/me/context:', err);
             data = await apiFetch('/api/me/context');
         }
+
+        if (seq !== loadSeq) return;
 
         const groups = Array.isArray(data)
             ? data
@@ -53,10 +75,13 @@ export async function loadGroupsForForm() {
             console.warn('[announcements] Groups list is empty. Raw response:', data);
         }
 
-        populateChatSelect(chatSelect, groups);
+        populateChatSelect(chatSelect, groups, { preserveExistingOnEmpty: true });
     } catch (err) {
+        if (seq !== loadSeq) return;
         console.error('[announcements] Failed to load groups:', err);
-        chatSelect.innerHTML = '<option value="">Ошибка загрузки групп</option>';
+        if (!hasValidOptions(chatSelect)) {
+            chatSelect.innerHTML = '<option value="">Ошибка загрузки групп</option>';
+        }
     }
 }
 

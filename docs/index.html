@@ -27,6 +27,35 @@
             <button class="tab-btn" onclick="switchTab('create', event)">Создать анонс</button>
         </div>
         <div id="signupSection" class="section active">
+            <div id="game-details" class="game-header">Загрузка информации о матче...</div>
+            <div id="status-container" class="status-box" style="display: none;">
+                <p id="status-text" style="margin: 0 0 5px 0; font-weight: bold;"></p>
+                <p id="payment-text" style="margin: 0; font-size: 13px; color: gray;"></p>
+            </div>
+            
+            <div class="actions-row">
+                <button id="action-btn" style="display: none; flex: 2; margin-top: 10px;">Записаться</button>
+                <button id="cancel-btn" class="btn-danger" style="display: none; flex: 2; margin-top: 10px;">Отменить запись</button>
+                <button id="copy-link-btn" class="btn-secondary" style="flex: 1; margin-top: 10px;">📋 Ссылка</button>
+                <button id="refresh-btn" class="btn-secondary" style="flex: 1; margin-top: 10px;">🔄 Обновить</button>
+            </div>
+
+            <div id="admin-panel-container" style="display: none; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
+                <h3>⚙️ Панель администратора</h3>
+                <button id="open-add-player-modal" class="btn-secondary">➕ Добавить игрока вручную</button>
+                <div class="form-group">
+                    <label>Площадка:</label>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="venueSelect" style="flex: 3;" required><option value="">Загрузка площадок...</option></select>
+                        <button type="button" id="open-venue-modal" class="btn-secondary btn-sm" style="flex: 1; margin-top: 0;">➕</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="players-list">
+                <h3>📜 Состав участников (<span id="total-count">0</span>/<span id="max-count">0</span>)</h3>
+                <div id="players-container">Загрузка состава...</div>
+            </div>
             <h2>Волейбольный матч</h2>
             <div id="user-info">Загрузка данных...</div>
             <div id="status-container" class="status-box" style="display: none;">
@@ -47,6 +76,36 @@
                 <div class="form-group"><label>Карта (https://):</label><input type="url" id="locLink" required></div>
                 <div class="form-group"><label>Стоимость:</label><input type="text" id="cost" required></div>
                 <div class="form-group"><label>Максимум игроков:</label><input type="number" id="maxPlayers" value="12" min="2" max="30" required></div>
+    <!-- ADD/EDIT PLAYER MODAL -->
+    <div id="playerModal" class="modal">
+        <div class="modal-content">
+            <h3 id="modal-title">Добавить игрока</h3>
+            <form id="playerForm">
+                <input type="hidden" id="modalUserId">
+                <div class="form-group"><label>Имя и Фамилия:</label><input type="text" id="modalUserName" required></div>
+                <div class="form-group"><label>Телефон (необязательно):</label><input type="tel" id="modalUserPhone"></div>
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button type="submit" style="flex: 1; margin-top: 0;">Сохранить</button>
+                    <button type="button" id="close-player-modal" class="btn-secondary" style="flex: 1; margin-top: 0;">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ADD VENUE MODAL -->
+    <div id="venueModal" class="modal">
+        <div class="modal-content">
+            <h3>Добавить новую площадку</h3>
+            <form id="venueForm">
+                <div class="form-group"><label>Название площадки:</label><input type="text" id="venueName" required placeholder="Например: СК Пахтакор"></div>
+                <div class="form-group"><label>Ссылка на карту (Google/Yandex):</label><input type="url" id="venueMapUrl" required placeholder="https://maps.google.com/..."></div>
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button type="submit" style="flex: 1; margin-top: 0;">Добавить</button>
+                    <button type="button" id="close-venue-modal" class="btn-secondary" style="flex: 1; margin-top: 0;">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
                 <div class="form-group"><label>Организатор:</label><input type="text" id="orgName" required></div>
                 <div class="form-group"><label>Телефон:</label><input type="tel" id="orgPhone" required></div>
                 <button type="submit">Опубликовать</button>
@@ -70,7 +129,9 @@
         import { initRouter } from './js/core/router_ui.js';
         import { initSignups } from './js/modules/signups.js';
         import { initAnnouncements } from './js/modules/announcements.js';
+        import { initVenues } from './js/modules/venues.js';
         document.addEventListener("DOMContentLoaded", async () => {
+            await initVenues();
             await initRouter();
             await initSignups();
             initAnnouncements();

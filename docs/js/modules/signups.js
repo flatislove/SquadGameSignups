@@ -23,6 +23,11 @@ function formatPlayerDisplayName(rawName) {
     return cleaned;
 }
 
+function formatUsername(rawUsername) {
+    const cleaned = String(rawUsername ?? '').trim().replace(/^@+/, '');
+    return cleaned ? `@${cleaned}` : 'Не указан';
+}
+
 function resolveAnnouncementGameId() {
     if (window.CURRENT_GAME_ID) {
         return String(window.CURRENT_GAME_ID).trim();
@@ -47,6 +52,79 @@ function resolveAnnouncementGameId() {
     return null;
 }
 
+function ensurePlayerInfoModal() {
+    let modal = document.getElementById('playerInfoPopup');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'playerInfoPopup';
+    modal.className = 'modal';
+    modal.style.display = 'none';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 340px;">
+            <h3 style="margin-top: 0; margin-bottom: 12px;">Информация об игроке</h3>
+            <div style="font-size: 14px; line-height: 1.6; margin-bottom: 14px;">
+                <div><b>Имя:</b> <span id="popupPlayerName">—</span></div>
+                <div><b>Telegram:</b> <span id="popupPlayerUsername">—</span></div>
+            </div>
+            <button type="button" id="closePlayerInfoPopup" class="btn-secondary" style="margin-top: 0;">Закрыть</button>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal || e.target.id === 'closePlayerInfoPopup') {
+            modal.style.display = 'none';
+        }
+    });
+
+    return modal;
+}
+
+function openPlayerInfoPopup(player) {
+    const modal = ensurePlayerInfoModal();
+    const nameEl = modal.querySelector('#popupPlayerName');
+    const unameEl = modal.querySelector('#popupPlayerUsername');
+
+    if (nameEl) nameEl.textContent = formatPlayerDisplayName(player.user_name || player.name);
+    if (unameEl) unameEl.textContent = formatUsername(player.telegram_username || player.username);
+
+    modal.style.display = 'flex';
+}
+
+function normalizeRoster(signupsList, maxPlayers) {
+    const rawList = Array.isArray(signupsList) ? [...signupsList] : [];
+    const limit = Number.isFinite(Number(maxPlayers)) && Number(maxPlayers) > 0
+        ? Number(maxPlayers)
+        : rawList.length;
+
+    const explicitlyMain = rawList.filter((item) => item.status === 'main');
+    const explicitlyReserve = rawList.filter((item) => item.status === 'reserve');
+    const otherItems = rawList.filter((item) => item.status !== 'main' && item.status !== 'reserve');
+
+    const mainList = [...explicitlyMain];
+    const reserveList = [...explicitlyReserve];
+
+    for (const item of otherItems) {
+        if (mainList.length < limit) {
+            mainList.push({ ...item, status: 'main' });
+        } else {
+            reserveList.push({ ...item, status: 'reserve' });
+        }
+    }
+
+    while (mainList.length < limit && reserveList.length > 0) {
+        const promoted = reserveList.shift();
+        mainList.push({ ...promoted, status: 'main' });
+    }
+
+    return {
+        main: mainList.map((p) => ({ ...p, status: 'main' })),
+        reserve: reserveList.map((p) => ({ ...p, status: 'reserve' }))
+    };
+}
+
 export async function initSignups() {
     const refs = {
         details: document.getElementById('game-details'),
@@ -60,204 +138,190 @@ export async function initSignups() {
         maxCount: document.getElementById('max-count'),
         players: document.getElementById('players-container'),
         adminPanel: document.getElementById('admin-panel-container'),
-        modal: document.getElementById('playerModal'),
-        modalTitle: document.getElementById('playerModalTitle'),
-        tabDbPlayers: document.getElementById('tab-db-players'),
-        tabNewPlayer: document.getElementById('tab-new-player'),
-        dbPlayersPane: document.getElementById('dbPlayersPane'),
-        newPlayerPane: document.getElementById('newPlayerPane'),
-        playerSearchInput: document.getElementById('playerSearchInput'),
-        dbSelectIsPaid: document.getElementById('dbSelectIsPaid'),
-        dbPlayersList: document.getElementById('dbPlayersList'),
-        closeModalDbBtn: document.getElementById('close-player-modal-db'),
-        form: document.getElementById('playerForm'),
-        openModalBtn: document.getElementById('open-add-player-modal'),
-        closeModalBtn: document.getElementById('close-player-modal'),
-        editPlayerId: document.getElementById('editPlayerId'),
-        modalUserName: document.getElementById('modalUserName'),
-        modalUserGender: document.getElementById('modalUserGender'),
-        modalTelegramId: document.getElementById('modalTelegramId'),
-        modalTelegramUsername: document.getElementById('modalTelegramUsername'),
-        addToMatchOptionGroup: document.getElementById('addToMatchOptionGroup'),
-        modalAddToMatch: document.getElementById('modalAddToMatch'),
-        modalIsPaidGroup: document.getElementById('modalIsPaidGroup'),
-        modalIsPaid: document.getElementById('modalIsPaid'),
         receiptModal: document.getElementById('receiptModal'),
         receiptFileInput: document.getElementById('receiptFileInput'),
         submitReceiptBtn: document.getElementById('submit-receipt-btn'),
         closeReceiptModalBtn: document.getElementById('close-receipt-modal')
     };
 
+    if (refs.confirmPaymentBtn) {
+        refs.confirmPaymentBtn.style.display = 'none';
+    }
+    if (refs.adminPanel) {
+        refs.adminPanel.style.display = 'none';
+    }
+
     let gameId = resolveAnnouncementGameId();
-    let cachedDbPlayers = null;
-    let currentGameMeta = { mainCount: 0, reserveCount: 0, maxPlayers: 0 };
+    let currentGameId = gameId;
+    let currentUserState = {
+        status: 'not_registered',
+        isPaid: false,
+        signupId: null
+    };
 
-    function updatePaymentSummaryText() {
-        if (!refs.payment || !refs.players) return;
-        const paidCount = refs.players.querySelectorAll('.player-name-paid').length;
-        refs.payment.innerText = `Основной: ${currentGameMeta.mainCount}/${currentGameMeta.maxPlayers} | Резерв: ${currentGameMeta.reserveCount} | Оплатили: ${paidCount}`;
+    let paymentIconBtn = document.getElementById('header-payment-icon-btn');
+    if (!paymentIconBtn && refs.cancel?.parentElement) {
+        paymentIconBtn = document.createElement('button');
+        paymentIconBtn.type = 'button';
+        paymentIconBtn.id = 'header-payment-icon-btn';
+        paymentIconBtn.title = 'Статус оплаты';
+        paymentIconBtn.style.cssText = [
+            'flex: 0 0 46px',
+            'width: 46px',
+            'height: 42px',
+            'padding: 0',
+            'margin-top: 0',
+            'display: inline-flex',
+            'align-items: center',
+            'justify-content: center',
+            'font-size: 18px',
+            'border-radius: 8px'
+        ].join(';');
+        refs.cancel.parentElement.appendChild(paymentIconBtn);
     }
 
-    function applyRowPaymentState(btn, isPaid) {
-        const nextIsPaid = Boolean(isPaid);
-        btn.dataset.paid = String(!nextIsPaid);
-        btn.textContent = nextIsPaid ? '↩️' : '💳';
+    function syncPaymentIcon() {
+        if (!paymentIconBtn) return;
 
-        const row = btn.closest('.player-item');
-        const nameEl = row?.querySelector('.player-info > span:last-child');
-        if (nameEl) {
-            nameEl.classList.toggle('player-name-paid', nextIsPaid);
-            nameEl.classList.toggle('player-name-unpaid', !nextIsPaid);
+        const isRegistered = currentUserState.status !== 'not_registered';
+        const isPaid = Boolean(currentUserState.isPaid);
+
+        paymentIconBtn.style.display = 'inline-flex';
+        paymentIconBtn.textContent = '💳';
+
+        if (!isRegistered) {
+            paymentIconBtn.disabled = true;
+            paymentIconBtn.style.backgroundColor = '#555b64';
+            paymentIconBtn.style.color = '#d0d5dd';
+            paymentIconBtn.style.opacity = '0.55';
+            paymentIconBtn.style.cursor = 'not-allowed';
+            paymentIconBtn.title = 'Сначала запишитесь на матч';
+            return;
         }
 
-        updatePaymentSummaryText();
-    }
-
-    function switchModalMode(mode) {
-        const isDb = mode === 'db';
-        if (refs.tabDbPlayers) refs.tabDbPlayers.classList.toggle('active', isDb);
-        if (refs.tabNewPlayer) refs.tabNewPlayer.classList.toggle('active', !isDb);
-        if (refs.dbPlayersPane) refs.dbPlayersPane.style.display = isDb ? 'block' : 'none';
-        if (refs.newPlayerPane) refs.newPlayerPane.style.display = isDb ? 'none' : 'block';
-    }
-
-    function openNewPlayerForm(playerToEdit = null) {
-        switchModalMode('new');
-        if (playerToEdit) {
-            if (refs.modalTitle) refs.modalTitle.textContent = 'Редактировать игрока';
-            if (refs.editPlayerId) refs.editPlayerId.value = playerToEdit.id || '';
-            if (refs.modalUserName) refs.modalUserName.value = playerToEdit.name || '';
-            if (refs.modalUserGender) refs.modalUserGender.value = playerToEdit.gender || 'male';
-            if (refs.modalTelegramId) refs.modalTelegramId.value = playerToEdit.telegram_id ?? '';
-            if (refs.modalTelegramUsername) {
-                refs.modalTelegramUsername.value = playerToEdit.telegram_username
-                    ? `@${String(playerToEdit.telegram_username).replace(/^@/, '')}`
-                    : '';
-            }
-            if (refs.addToMatchOptionGroup) refs.addToMatchOptionGroup.style.display = 'none';
-            if (refs.modalIsPaidGroup) refs.modalIsPaidGroup.style.display = 'none';
+        if (isPaid) {
+            paymentIconBtn.disabled = true;
+            paymentIconBtn.style.backgroundColor = '#2e9e5b';
+            paymentIconBtn.style.color = '#ffffff';
+            paymentIconBtn.style.opacity = '1';
+            paymentIconBtn.style.cursor = 'default';
+            paymentIconBtn.title = 'Оплачено';
         } else {
-            if (refs.modalTitle) refs.modalTitle.textContent = 'Новый игрок';
-            if (refs.editPlayerId) refs.editPlayerId.value = '';
-            if (refs.modalUserName) refs.modalUserName.value = '';
-            if (refs.modalUserGender) refs.modalUserGender.value = 'male';
-            if (refs.modalTelegramId) refs.modalTelegramId.value = '';
-            if (refs.modalTelegramUsername) refs.modalTelegramUsername.value = '';
-            if (refs.addToMatchOptionGroup) refs.addToMatchOptionGroup.style.display = 'block';
-            if (refs.modalAddToMatch) refs.modalAddToMatch.checked = true;
-            if (refs.modalIsPaidGroup) refs.modalIsPaidGroup.style.display = 'block';
-            if (refs.modalIsPaid) refs.modalIsPaid.value = 'false';
+            paymentIconBtn.disabled = false;
+            paymentIconBtn.style.backgroundColor = '#e68a1e';
+            paymentIconBtn.style.color = '#ffffff';
+            paymentIconBtn.style.opacity = '1';
+            paymentIconBtn.style.cursor = 'pointer';
+            paymentIconBtn.title = 'Подтвердить оплату';
         }
     }
 
-    function renderDbPlayersList(query = '') {
-        if (!refs.dbPlayersList) return;
-        const q = query.trim().toLowerCase();
-        const sourceList = Array.isArray(cachedDbPlayers) ? cachedDbPlayers : [];
+    function syncUserStatusAndActions(data) {
+        const maxPlayers = Number(data?.max_players ?? data?.game?.max_players ?? 18);
+        const roster = normalizeRoster(data?.signups, maxPlayers);
+        const totalSigned = roster.main.length + roster.reserve.length;
+        const freeSlots = Math.max(0, maxPlayers - totalSigned);
 
-        const sorted = [...sourceList].sort((a, b) =>
-            String(a.name || '').localeCompare(String(b.name || ''), 'ru', { sensitivity: 'base' })
-        );
+        const rawStatus = data?.status || 'not_registered';
+        const isRegistered = rawStatus !== 'not_registered';
 
-        const filtered = q
-            ? sorted.filter((p) => {
-                  const name = String(p.name || '').toLowerCase();
-                  const uname = String(p.telegram_username || '').toLowerCase();
-                  const tgId = String(p.telegram_id || '');
-                  return name.includes(q) || uname.includes(q) || tgId.includes(q);
-              })
-            : sorted;
+        const currentUserId = tg?.initDataUnsafe?.user?.id;
+        const currentUsername = String(tg?.initDataUnsafe?.user?.username || '').replace(/^@+/, '').toLowerCase();
 
-        if (filtered.length === 0) {
-            refs.dbPlayersList.innerHTML =
-                '<div style="color: gray; font-size: 13px; padding: 10px; text-align: center;">Игроки не найдены. Создайте нового во вкладке «Новый игрок».</div>';
-            return;
+        const matchedPlayer = [...roster.main, ...roster.reserve].find((p) => {
+            if (currentUserId && p.telegram_id && String(p.telegram_id) === String(currentUserId)) {
+                return true;
+            }
+            const pUname = String(p.telegram_username || '').replace(/^@+/, '').toLowerCase();
+            if (currentUsername && pUname && pUname === currentUsername) {
+                return true;
+            }
+            return Boolean(p.is_current_user);
+        });
+
+        const resolvedStatus = matchedPlayer?.status || (rawStatus === 'reserve' ? 'reserve' : (isRegistered ? 'main' : 'not_registered'));
+        const resolvedIsPaid = Boolean(matchedPlayer?.is_paid ?? data?.is_paid ?? false);
+
+        currentUserState = {
+            status: isRegistered ? resolvedStatus : 'not_registered',
+            isPaid: isRegistered ? resolvedIsPaid : false,
+            signupId: matchedPlayer?.id || data?.signup_id || null
+        };
+
+        if (refs.status) refs.status.style.display = 'block';
+
+        if (!isRegistered) {
+            if (refs.statusText) {
+                refs.statusText.textContent = `Количество свободных слотов: ${freeSlots}`;
+            }
+            if (refs.payment) {
+                refs.payment.innerHTML = '';
+                refs.payment.style.display = 'none';
+            }
+        } else {
+            const listLabel = currentUserState.status === 'reserve' ? 'Резерв' : 'Основной список';
+            const badgeText = currentUserState.isPaid ? 'Оплачено' : 'Не оплачено';
+            const badgeBg = currentUserState.isPaid ? '#2e9e5b' : '#e68a1e';
+
+            if (refs.statusText) {
+                refs.statusText.textContent = `Вы записаны: ${listLabel}`;
+            }
+            if (refs.payment) {
+                refs.payment.style.display = 'inline-block';
+                refs.payment.innerHTML = `<span style="display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;color:#fff;background:${badgeBg};">${escapeHtml(badgeText)}</span>`;
+            }
         }
 
-        refs.dbPlayersList.innerHTML = '';
-        filtered.forEach((p) => {
-            const row = document.createElement('div');
-            row.className = 'db-player-row';
+        if (refs.action) {
+            refs.action.style.display = isRegistered ? 'none' : 'block';
+            refs.action.textContent = 'Записаться';
+        }
+        if (refs.cancel) {
+            refs.cancel.style.display = isRegistered ? 'block' : 'none';
+            refs.cancel.textContent = 'Отменить запись';
+        }
 
-            const genderIcon = p.gender === 'female' ? '👩' : '👨';
-            const metaParts = [];
-            if (p.telegram_username) metaParts.push(`@${escapeHtml(p.telegram_username)}`);
-            if (p.telegram_id) metaParts.push(`ID: ${escapeHtml(p.telegram_id)}`);
-            if (metaParts.length === 0) metaParts.push('TG не привязан');
+        syncPaymentIcon();
+    }
 
-            row.innerHTML = `
-                <div style="overflow: hidden;">
-                    <div style="font-weight: 600;">${genderIcon} ${escapeHtml(p.name)}</div>
-                    <div class="db-player-meta">${metaParts.join(' • ')}</div>
-                </div>
-                <div style="display: flex; gap: 4px; flex-shrink: 0;">
-                    <button type="button" class="btn-secondary btn-sm edit-db-player" data-id="${escapeHtml(p.id)}" title="Редактировать">✏️</button>
-                    <button type="button" class="btn-sm add-db-player" data-id="${escapeHtml(p.id)}">➕</button>
-                </div>
-            `;
-            refs.dbPlayersList.appendChild(row);
-        });
-
-        refs.dbPlayersList.querySelectorAll('.edit-db-player').forEach((btn) => {
-            btn.onclick = () => {
-                const target = sourceList.find((item) => String(item.id) === String(btn.dataset.id));
-                if (target) openNewPlayerForm(target);
-            };
-        });
-
-        refs.dbPlayersList.querySelectorAll('.add-db-player').forEach((btn) => {
-            btn.onclick = async () => {
-                if (!gameId || btn.disabled) return;
-                btn.disabled = true;
-                try {
-                    await apiFetch('/api/signups/admin-add', {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            game_id: gameId,
-                            player_id: btn.dataset.id,
-                            is_paid: Boolean(refs.dbSelectIsPaid?.checked)
-                        })
+    if (paymentIconBtn) {
+        paymentIconBtn.onclick = async () => {
+            if (paymentIconBtn.disabled || currentUserState.status === 'not_registered' || currentUserState.isPaid) {
+                return;
+            }
+            paymentIconBtn.disabled = true;
+            try {
+                if (currentUserState.signupId) {
+                    await apiFetch(`/api/signups/${encodeURIComponent(currentUserState.signupId)}/pay`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ is_paid: true })
                     });
-                    if (refs.modal) refs.modal.style.display = 'none';
-                    await loadData();
-                } catch (err) {
-                    console.error('Ошибка добавления игрока из базы:', err);
-                    if (tg?.showAlert) tg.showAlert(`❌ ${err.message}`);
-                } finally {
-                    btn.disabled = false;
+                } else if (currentGameId) {
+                    await apiFetch('/api/signups/pay', {
+                        method: 'POST',
+                        body: JSON.stringify({ game_id: currentGameId, is_paid: true })
+                    });
                 }
-            };
-        });
-    }
-
-    async function loadDbPlayers(forceRefresh = false) {
-        if (!refs.dbPlayersList) return;
-        if (Array.isArray(cachedDbPlayers) && !forceRefresh) {
-            renderDbPlayersList(refs.playerSearchInput?.value || '');
-            return;
-        }
-        refs.dbPlayersList.innerHTML = '<div style="color: gray; font-size: 13px; padding: 10px;">Загрузка...</div>';
-        try {
-            const res = await apiFetch('/api/signups/players');
-            cachedDbPlayers = Array.isArray(res?.players) ? res.players : [];
-            renderDbPlayersList(refs.playerSearchInput?.value || '');
-        } catch (err) {
-            console.error('Ошибка загрузки базы игроков:', err);
-            refs.dbPlayersList.innerHTML = `<div style="color: #d9534f; font-size: 13px; padding: 10px;">Ошибка загрузки базы: ${escapeHtml(err.message)}</div>`;
-        }
+                await loadData();
+            } catch (err) {
+                console.error('Ошибка подтверждения оплаты:', err);
+                if (tg?.showAlert) tg.showAlert(`❌ Не удалось подтвердить оплату: ${err.message}`);
+                syncPaymentIcon();
+            }
+        };
     }
 
     if (refs.action) {
         refs.action.onclick = async () => {
-            if (!gameId || refs.action.disabled) return;
+            if (!currentGameId || refs.action.disabled) return;
             refs.action.disabled = true;
             try {
                 const res = await apiFetch('/api/signups', {
                     method: 'POST',
-                    body: JSON.stringify({ game_id: gameId })
+                    body: JSON.stringify({ game_id: currentGameId })
                 });
                 if (res?.success && tg?.showAlert) {
-                    tg.showAlert(`✅ Вы записаны (${res.status === 'main' ? 'Основной состав' : 'Резерв'})!`);
+                    tg.showAlert(`✅ Вы записаны (${res.status === 'reserve' ? 'Резерв' : 'Основной список'})!`);
                 }
                 await loadData();
             } catch (err) {
@@ -271,10 +335,10 @@ export async function initSignups() {
 
     if (refs.cancel) {
         refs.cancel.onclick = async () => {
-            if (!gameId || refs.cancel.disabled) return;
+            if (!currentGameId || refs.cancel.disabled) return;
             refs.cancel.disabled = true;
             try {
-                await apiFetch(`/api/signups?game_id=${encodeURIComponent(gameId)}`, { method: 'DELETE' });
+                await apiFetch(`/api/signups?game_id=${encodeURIComponent(currentGameId)}`, { method: 'DELETE' });
                 await loadData();
             } catch (err) {
                 console.error('Ошибка отмены записи:', err);
@@ -285,122 +349,75 @@ export async function initSignups() {
         };
     }
 
-    async function loadData() {
-        gameId = resolveAnnouncementGameId();
-
-        if (!gameId) {
-            if (refs.details) {
-                refs.details.textContent = 'ℹ️ Чтобы открыть матч, нажмите кнопку «Запись» под анонсом в группе.';
-            }
-            if (refs.status) refs.status.style.display = 'none';
-            if (refs.action) refs.action.style.display = 'none';
-            if (refs.cancel) refs.cancel.style.display = 'none';
-            if (refs.confirmPaymentBtn) refs.confirmPaymentBtn.style.display = 'none';
-            if (refs.adminPanel) refs.adminPanel.style.display = 'none';
-            if (refs.players) refs.players.innerHTML = '';
-            if (refs.totalCount) refs.totalCount.textContent = '0';
-            if (refs.maxCount) refs.maxCount.textContent = '0';
-            return;
-        }
-
-        if (refs.confirmPaymentBtn) refs.confirmPaymentBtn.style.display = 'block';
-
-        try {
-            const data = await apiFetch(`/api/signups/status?game_id=${encodeURIComponent(gameId)}`);
-            const game = data.game || {};
-            const link = safeUrl(game.loc_link);
-            const locName = escapeHtml(game.loc_name || 'Площадка');
-
-            currentGameMeta = {
-                mainCount: data.main_count ?? 0,
-                reserveCount: data.reserve_count ?? 0,
-                maxPlayers: data.max_players ?? 0
-            };
-
-            if (refs.details) {
-                const locationHtml = link
-                    ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${locName}</a>`
-                    : locName;
-
-                refs.details.innerHTML = `
-                    <b>📅:</b> ${escapeHtml(game.date || '—')} (${escapeHtml(game.time_start || '—')}-${escapeHtml(game.time_end || '—')})<br>
-                    <b>📍:</b> ${locationHtml}<br>
-                    <b>💰:</b> ${escapeHtml(game.cost || '—')} | <b>👤:</b> ${escapeHtml(game.org_name || '—')}
-                `;
-            }
-
-            if (refs.status) refs.status.style.display = 'block';
-            if (refs.statusText) refs.statusText.innerText = data.message || '';
-
-            const signupsList = Array.isArray(data.signups) ? data.signups : [];
-            const paidCount = signupsList.filter((s) => Boolean(s.is_paid)).length;
-            if (refs.payment) {
-                refs.payment.innerText = `Основной: ${currentGameMeta.mainCount}/${currentGameMeta.maxPlayers} | Резерв: ${currentGameMeta.reserveCount} | Оплатили: ${paidCount}`;
-            }
-
-            if (refs.totalCount) {
-                refs.totalCount.textContent = String(signupsList.length);
-            }
-            if (refs.maxCount) {
-                refs.maxCount.textContent = String(currentGameMeta.maxPlayers);
-            }
-
-            if (refs.action) {
-                refs.action.style.display = data.status === 'not_registered' ? 'block' : 'none';
-            }
-
-            if (refs.cancel) {
-                refs.cancel.style.display = data.status !== 'not_registered' ? 'block' : 'none';
-            }
-
-            if (refs.adminPanel) {
-                refs.adminPanel.style.display = data.is_admin ? 'block' : 'none';
-            }
-
-            renderPlayers(data);
-        } catch (e) {
-            console.error('Ошибка загрузки статуса записи:', e);
-            if (refs.details) {
-                refs.details.textContent = `❌ Ошибка загрузки состава: ${e?.message || 'неизвестная ошибка'}`;
-            }
-            if (refs.players) refs.players.innerHTML = '';
-        }
-    }
-
     function renderPlayers(data) {
         if (!refs.players) return;
         refs.players.innerHTML = '';
 
-        const list = Array.isArray(data.signups) ? data.signups : [];
-        if (list.length === 0) {
+        const maxPlayers = Number(data?.max_players ?? data?.game?.max_players ?? 18);
+        const roster = normalizeRoster(data?.signups, maxPlayers);
+
+        if (roster.main.length === 0 && roster.reserve.length === 0) {
             refs.players.innerHTML = '<div style="color: gray; font-size: 13px;">Пока никто не записался.</div>';
             return;
         }
 
-        let mainIndex = 0;
-        list.forEach((s) => {
+        const createRow = (player, indexLabel) => {
             const item = document.createElement('div');
             item.className = 'player-item';
-            const badge = s.status === 'main' ? `#${++mainIndex}` : 'Рез';
-            const displayName = formatPlayerDisplayName(s.user_name);
-            const paidClass = s.is_paid ? 'player-name-paid' : 'player-name-unpaid';
+
+            const displayName = formatPlayerDisplayName(player.user_name || player.name);
+            const paidClass = player.is_paid ? 'player-name-paid' : 'player-name-unpaid';
 
             const adminHtml = data.is_admin
                 ? `<div style="display: flex; gap: 4px; flex-shrink: 0;">
-                    <button class="btn-secondary btn-sm toggle-pay" data-id="${escapeHtml(s.id)}" data-paid="${!s.is_paid}" title="Подтвердить / снять оплату">${s.is_paid ? '↩️' : '💳'}</button>
-                    <button class="btn-danger btn-sm remove-signup" data-id="${escapeHtml(s.id)}" title="Удалить из списка">🗑</button>
+                    <button type="button" class="btn-secondary btn-sm toggle-pay" data-id="${escapeHtml(player.id)}" data-paid="${!player.is_paid}" title="Подтвердить / снять оплату">${player.is_paid ? '↩️' : '💳'}</button>
+                    <button type="button" class="btn-danger btn-sm remove-signup" data-id="${escapeHtml(player.id)}" title="Удалить из списка">🗑</button>
                 </div>`
                 : '';
 
             item.innerHTML = `
                 <div class="player-info">
-                    <span>${badge}</span>
-                    <span class="${paidClass}">${escapeHtml(displayName)}</span>
+                    <span style="min-width: 28px; color: gray;">${escapeHtml(indexLabel)}</span>
+                    <button type="button" class="player-name-trigger ${paidClass}" style="background: none; border: none; padding: 0; margin: 0; width: auto; text-align: left; font-size: 14px; cursor: pointer; text-decoration: none;">
+                        ${escapeHtml(displayName)}
+                    </button>
                 </div>
                 ${adminHtml}
             `;
-            refs.players.appendChild(item);
-        });
+
+            const nameBtn = item.querySelector('.player-name-trigger');
+            if (nameBtn) {
+                nameBtn.onclick = () => openPlayerInfoPopup(player);
+            }
+
+            return item;
+        };
+
+        if (roster.main.length > 0) {
+            const mainTitle = document.createElement('div');
+            mainTitle.style.cssText = 'font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: gray; margin: 6px 0 8px;';
+            mainTitle.textContent = 'Основной состав';
+            refs.players.appendChild(mainTitle);
+
+            roster.main.forEach((player, idx) => {
+                refs.players.appendChild(createRow(player, `#${idx + 1}`));
+            });
+        }
+
+        if (roster.reserve.length > 0) {
+            const divider = document.createElement('div');
+            divider.style.cssText = 'display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; color: gray; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;';
+            divider.innerHTML = `
+                <span style="flex: 1; height: 1px; background: rgba(128, 128, 128, 0.35);"></span>
+                <span>Резерв</span>
+                <span style="flex: 1; height: 1px; background: rgba(128, 128, 128, 0.35);"></span>
+            `;
+            refs.players.appendChild(divider);
+
+            roster.reserve.forEach((player, idx) => {
+                refs.players.appendChild(createRow(player, `Р${idx + 1}`));
+            });
+        }
 
         refs.players.querySelectorAll('.toggle-pay').forEach((btn) => {
             btn.onclick = async () => {
@@ -408,12 +425,11 @@ export async function initSignups() {
                 const targetIsPaid = btn.dataset.paid === 'true';
                 btn.disabled = true;
                 try {
-                    const res = await apiFetch(`/api/signups/${encodeURIComponent(btn.dataset.id)}/pay`, {
+                    await apiFetch(`/api/signups/${encodeURIComponent(btn.dataset.id)}/pay`, {
                         method: 'PATCH',
                         body: JSON.stringify({ is_paid: targetIsPaid })
                     });
-                    const confirmedIsPaid = typeof res?.is_paid === 'boolean' ? res.is_paid : targetIsPaid;
-                    applyRowPaymentState(btn, confirmedIsPaid);
+                    await loadData();
                 } catch (err) {
                     console.error('Ошибка смены статуса оплаты:', err);
                     if (tg?.showAlert) tg.showAlert(`❌ Не удалось обновить оплату: ${err.message}`);
@@ -442,11 +458,60 @@ export async function initSignups() {
         });
     }
 
-    if (refs.confirmPaymentBtn && refs.receiptModal) {
-        refs.confirmPaymentBtn.onclick = () => {
-            if (refs.receiptFileInput) refs.receiptFileInput.value = '';
-            refs.receiptModal.style.display = 'flex';
-        };
+    async function loadData() {
+        gameId = resolveAnnouncementGameId();
+        currentGameId = gameId;
+
+        if (!gameId) {
+            if (refs.details) {
+                refs.details.textContent = 'ℹ️ Чтобы открыть матч, нажмите кнопку «Запись» под анонсом в группе.';
+            }
+            if (refs.status) refs.status.style.display = 'none';
+            if (refs.action) refs.action.style.display = 'none';
+            if (refs.cancel) refs.cancel.style.display = 'none';
+            if (paymentIconBtn) paymentIconBtn.style.display = 'none';
+            if (refs.players) refs.players.innerHTML = '';
+            if (refs.totalCount) refs.totalCount.textContent = '0';
+            if (refs.maxCount) refs.maxCount.textContent = '0';
+            return;
+        }
+
+        try {
+            const data = await apiFetch(`/api/signups/status?game_id=${encodeURIComponent(gameId)}`);
+            const game = data.game || {};
+            const link = safeUrl(game.loc_link);
+            const locName = escapeHtml(game.loc_name || 'Площадка');
+            const maxPlayers = Number(data.max_players ?? game.max_players ?? 18);
+            const roster = normalizeRoster(data.signups, maxPlayers);
+
+            if (refs.details) {
+                const locationHtml = link
+                    ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; padding-bottom: 1px;">${locName} ↗</a>`
+                    : locName;
+
+                refs.details.innerHTML = `
+                    <div style="margin-bottom: 4px;"><b>📅</b> ${escapeHtml(game.date || '—')} (${escapeHtml(game.time_start || '—')}–${escapeHtml(game.time_end || '—')})</div>
+                    <div style="margin-bottom: 4px;"><b>📍</b> ${locationHtml}</div>
+                    <div><b>💰</b> ${escapeHtml(game.cost || '—')} &nbsp;•&nbsp; <b>👤</b> ${escapeHtml(game.org_name || '—')}</div>
+                `;
+            }
+
+            if (refs.totalCount) {
+                refs.totalCount.textContent = String(roster.main.length + roster.reserve.length);
+            }
+            if (refs.maxCount) {
+                refs.maxCount.textContent = String(maxPlayers);
+            }
+
+            syncUserStatusAndActions(data);
+            renderPlayers(data);
+        } catch (e) {
+            console.error('Ошибка загрузки статуса записи:', e);
+            if (refs.details) {
+                refs.details.textContent = `❌ Ошибка загрузки состава: ${e?.message || 'неизвестная ошибка'}`;
+            }
+            if (refs.players) refs.players.innerHTML = '';
+        }
     }
 
     if (refs.closeReceiptModalBtn && refs.receiptModal) {
@@ -460,115 +525,12 @@ export async function initSignups() {
             const fileName = refs.receiptFileInput?.files?.[0]?.name;
             refs.receiptModal.style.display = 'none';
             const msg = fileName
-                ? `Чек «${fileName}» выбран (загрузка пока без действий).`
-                : 'Окно загрузки чека закрыто (загрузка пока без действий).';
+                ? `Чек «${fileName}» выбран.`
+                : 'Окно загрузки чека закрыто.';
             if (tg?.showAlert) {
                 tg.showAlert(msg);
             } else {
                 alert(msg);
-            }
-        };
-    }
-
-    if (refs.openModalBtn && refs.modal) {
-        refs.openModalBtn.onclick = async () => {
-            if (refs.modalTitle) refs.modalTitle.textContent = 'Добавить игрока';
-            if (refs.playerSearchInput) refs.playerSearchInput.value = '';
-            if (refs.dbSelectIsPaid) refs.dbSelectIsPaid.checked = false;
-            switchModalMode('db');
-            refs.modal.style.display = 'flex';
-            await loadDbPlayers(false);
-        };
-    }
-
-    if (refs.tabDbPlayers) {
-        refs.tabDbPlayers.onclick = async () => {
-            if (refs.modalTitle) refs.modalTitle.textContent = 'Добавить игрока';
-            switchModalMode('db');
-            await loadDbPlayers(false);
-        };
-    }
-
-    if (refs.tabNewPlayer) {
-        refs.tabNewPlayer.onclick = () => {
-            openNewPlayerForm(null);
-        };
-    }
-
-    if (refs.playerSearchInput) {
-        refs.playerSearchInput.oninput = (e) => {
-            renderDbPlayersList(e.target.value || '');
-        };
-    }
-
-    if (refs.closeModalDbBtn && refs.modal) {
-        refs.closeModalDbBtn.onclick = () => {
-            refs.modal.style.display = 'none';
-        };
-    }
-
-    if (refs.closeModalBtn && refs.modal) {
-        refs.closeModalBtn.onclick = () => {
-            refs.modal.style.display = 'none';
-        };
-    }
-
-    if (refs.form) {
-        refs.form.onsubmit = async (e) => {
-            e.preventDefault();
-            const editingId = refs.editPlayerId?.value?.trim();
-            const rawTgId = refs.modalTelegramId?.value?.trim();
-            const parsedTgId = rawTgId ? Number(rawTgId) : null;
-
-            const playerPayload = {
-                name: refs.modalUserName ? refs.modalUserName.value.trim() : '',
-                gender: refs.modalUserGender ? refs.modalUserGender.value : 'male',
-                telegram_id: Number.isFinite(parsedTgId) ? parsedTgId : null,
-                telegram_username: refs.modalTelegramUsername ? refs.modalTelegramUsername.value.trim() : ''
-            };
-
-            try {
-                if (editingId) {
-                    await apiFetch(
-                        `/api/signups/players/${encodeURIComponent(editingId)}?game_id=${encodeURIComponent(gameId || '')}`,
-                        {
-                            method: 'PATCH',
-                            body: JSON.stringify(playerPayload)
-                        }
-                    );
-                    if (tg?.showAlert) tg.showAlert('✅ Данные игрока обновлены!');
-                    switchModalMode('db');
-                    if (refs.modalTitle) refs.modalTitle.textContent = 'Добавить игрока';
-                    await loadDbPlayers(true);
-                    await loadData();
-                    return;
-                }
-
-                const addToMatch = Boolean(refs.modalAddToMatch?.checked);
-                if (addToMatch && gameId) {
-                    await apiFetch('/api/signups/admin-add', {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            game_id: gameId,
-                            ...playerPayload,
-                            is_paid: refs.modalIsPaid ? refs.modalIsPaid.value === 'true' : false
-                        })
-                    });
-                    if (refs.modal) refs.modal.style.display = 'none';
-                    await loadData();
-                } else {
-                    await apiFetch('/api/signups/players', {
-                        method: 'POST',
-                        body: JSON.stringify(playerPayload)
-                    });
-                    if (tg?.showAlert) tg.showAlert('✅ Игрок сохранён в базу!');
-                    switchModalMode('db');
-                    if (refs.modalTitle) refs.modalTitle.textContent = 'Добавить игрока';
-                    await loadDbPlayers(true);
-                }
-            } catch (err) {
-                console.error('Ошибка сохранения/добавления игрока:', err);
-                if (tg?.showAlert) tg.showAlert(`❌ ${err.message}`);
             }
         };
     }

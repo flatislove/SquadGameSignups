@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -138,6 +138,10 @@
                 <span>🎮 Другие игры</span>
                 <span class="badge">Скоро</span>
             </button>
+            <button type="button" id="menu-game" data-open-section="gameSection" class="menu-item">
+                <span>🎮 Игра</span>
+                <span>➔</span>
+            </button>
             <button type="button" id="menu-my-signups" data-open-section="mySignupsSection" class="menu-item">
                 <span>📝 Запись</span>
                 <span>➔</span>
@@ -209,6 +213,70 @@
         </div>
     </div>
 
+    <!-- 6. Игра (выбор игры, старт матча, настройки состава/действий) -->
+    <div id="gameSection" class="section-view" role="dialog" aria-modal="true" aria-labelledby="gameTitle">
+        <div class="section-inner">
+            <div class="section-header">
+                <button type="button" class="back-btn" data-back-to-menu>← Назад</button>
+                <h3 id="gameTitle" class="section-title">🎮 Игра</h3>
+            </div>
+            <div class="section-body">
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-size: 14px; margin-bottom: 6px; color: inherit;">Выберите игру:</label>
+                    <select id="gameSelect" style="width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(128, 128, 128, 0.16); background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: inherit; font-size: 14px;">
+                        <option value="">Загрузка игр...</option>
+                    </select>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <button type="button" id="btnGameStart" style="width: 100%; padding: 14px 16px; border-radius: 10px; border: none; background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); font-weight: bold; font-size: 15px; cursor: pointer;">
+                        ▶ Старт матча
+                    </button>
+                    <button type="button" id="btnGameSettings" style="width: 100%; padding: 14px 16px; border-radius: 10px; border: 1px solid rgba(128, 128, 128, 0.16); background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: inherit; font-weight: bold; font-size: 15px; cursor: pointer; display: none;">
+                        ⚙️ Настройки состава и действий
+                    </button>
+                </div>
+                <div id="gameInfo" style="margin-top: 16px; padding: 12px; border-radius: 10px; background: var(--tg-theme-secondary-bg-color, #f5f5f5); font-size: 13px; color: inherit; display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. Настройки состава и действий (экран админа) -->
+    <div id="gameSettingsSection" class="section-view" role="dialog" aria-modal="true" aria-labelledby="gameSettingsTitle">
+        <div class="section-inner">
+            <div class="section-header">
+                <button type="button" class="back-btn" data-back-to-game>← Назад к игре</button>
+                <h3 id="gameSettingsTitle" class="section-title">⚙️ Настройки игры</h3>
+            </div>
+            <div class="section-body">
+                <div id="gameSettingsError" style="color: #d9534f; font-size: 13px; margin-bottom: 10px; display: none;"></div>
+
+                <!-- Игроки -->
+                <div style="margin-bottom: 14px;">
+                    <div style="font-weight: bold; margin-bottom: 6px;">👥 Игроки в игре</div>
+                    <div id="playersList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+                </div>
+
+                <!-- Команды -->
+                <div style="margin-bottom: 14px;">
+                    <div style="font-weight: bold; margin-bottom: 6px;">🏆 Команды (перетаскивайте игроков)</div>
+                    <div id="teamsContainer" style="display: flex; flex-direction: column; gap: 10px;"></div>
+                    <button type="button" id="btnSaveTeams" style="width: 100%; padding: 10px; border-radius: 8px; border: none; background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); font-weight: bold; cursor: pointer;">💾 Сохранить команды и составы</button>
+                </div>
+
+                <!-- Действия сообщества -->
+                <div>
+                    <div style="font-weight: bold; margin-bottom: 6px;">⚡ Действия сообщества</div>
+                    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        <input type="text" id="newActionTitle" placeholder="Название действия" style="flex: 1; padding: 8px; border-radius: 8px; border: 1px solid rgba(128,128,128,0.16); background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: inherit; font-size: 14px;">
+                        <input type="number" id="newActionWeight" placeholder="Вес" step="0.5" style="width: 80px; padding: 8px; border-radius: 8px; border: 1px solid rgba(128,128,128,0.16); background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: inherit; font-size: 14px;">
+                        <button type="button" id="btnAddAction" style="padding: 8px 14px; border-radius: 8px; border: none; background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); font-weight: bold; cursor: pointer;">+</button>
+                    </div>
+                    <div id="actionsList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         import { apiFetch } from './js/core/api.js';
 
@@ -230,6 +298,418 @@
                 .replace(/"/g, '&quot;');
         }
 
+        // ---------- Игра: выпадающий список игр ----------
+        const gameSelect = document.getElementById('gameSelect');
+        const btnGameStart = document.getElementById('btnGameStart');
+        const btnGameSettings = document.getElementById('btnGameSettings');
+        const gameInfo = document.getElementById('gameInfo');
+        let selectedGameId = null;
+
+        async function loadGamesForDropdown() {
+            if (!gameSelect) return;
+            gameSelect.innerHTML = '<option value="">Загрузка игр...</option>';
+            try {
+                const res = await apiFetch('/api/signups/my-games');
+                const games = Array.isArray(res?.games) ? res.games : [];
+                gameSelect.innerHTML = '<option value="">— Выберите игру —</option>';
+                games.forEach(item => {
+                    const g = item.game || {};
+                    const dateStr = escapeHtml(g.date || 'Уточняется');
+                    const timeStr = g.time_start ? escapeHtml(g.time_start) : '';
+                    const locStr = escapeHtml(g.loc_name || g.venue_name || 'Площадка');
+                    const option = document.createElement('option');
+                    option.value = g.id ?? item.game_id ?? '';
+                    option.textContent = `${dateStr} ${timeStr} — ${locStr}`;
+                    gameSelect.appendChild(option);
+                });
+                if (games.length === 0) {
+                    gameSelect.innerHTML = '<option value="">Нет доступных игр</option>';
+                }
+            } catch (err) {
+                console.error('Failed to load games for dropdown:', err);
+                gameSelect.innerHTML = '<option value="">Ошибка загрузки игр</option>';
+            }
+        }
+
+        function updateGameButtons(gameId) {
+            selectedGameId = gameId;
+            if (!gameId) {
+                if (btnGameStart) btnGameStart.disabled = true;
+                if (btnGameSettings) btnGameSettings.style.display = 'none';
+                if (gameInfo) gameInfo.style.display = 'none';
+                return;
+            }
+            if (btnGameStart) btnGameStart.disabled = false;
+            checkAdminForGame(gameId);
+        }
+
+        async function checkAdminForGame(gameId) {
+            try {
+                const res = await apiFetch(`/api/signups/status?game_id=${encodeURIComponent(gameId)}`);
+                if (btnGameSettings) {
+                    btnGameSettings.style.display = res.is_admin ? 'block' : 'none';
+                }
+                const g = res.game || {};
+                if (gameInfo) {
+                    gameInfo.innerHTML = `
+                        <div style="font-weight: bold; margin-bottom: 4px;">${escapeHtml(g.title || g.name || 'Игра')}</div>
+                        <div style="color: gray; font-size: 12px;">Статус: ${escapeHtml(res.status || '-')}</div>
+                    `;
+                    gameInfo.style.display = 'block';
+                }
+            } catch (err) {
+                console.error('Failed to check admin status:', err);
+                if (btnGameSettings) btnGameSettings.style.display = 'none';
+                if (gameInfo) gameInfo.style.display = 'none';
+            }
+        }
+
+        async function loadGameSettings(gameId) {
+            const errorEl = document.getElementById('gameSettingsError');
+            if (errorEl) errorEl.style.display = 'none';
+            const playersList = document.getElementById('playersList');
+            if (playersList) playersList.innerHTML = '<div style="color: gray; font-size: 13px;">Загрузка...</div>';
+            const teamsContainer = document.getElementById('teamsContainer');
+            if (teamsContainer) teamsContainer.innerHTML = '<div style="color: gray; font-size: 13px;">Загрузка...</div>';
+            const actionsList = document.getElementById('actionsList');
+            if (actionsList) actionsList.innerHTML = '<div style="color: gray; font-size: 13px;">Загрузка...</div>';
+
+            try {
+                const [stateRes, statusRes] = await Promise.all([
+                    apiFetch(`/api/match/${encodeURIComponent(gameId)}/state`),
+                    apiFetch(`/api/signups/status?game_id=${encodeURIComponent(gameId)}`)
+                ]);
+
+                const teams = Array.isArray(stateRes?.teams) ? stateRes.teams : [];
+                const lineups = Array.isArray(stateRes?.lineups) ? stateRes.lineups : [];
+                const actions = Array.isArray(stateRes?.actions) ? stateRes.actions : [];
+                const signups = Array.isArray(statusRes?.signups) ? statusRes.signups : [];
+
+                const playerTeamMap = {};
+                lineups.forEach(l => { if (l.player_id && l.team_id) playerTeamMap[l.player_id] = l.team_id; });
+
+                let teamsToRender = teams.slice();
+                if (teamsToRender.length === 0) {
+                    teamsToRender = [
+                        { id: 'new_1', name: 'Команда 1', color: '#2481cc', _new: true },
+                        { id: 'new_2', name: 'Команда 2', color: '#e68a1e', _new: true },
+                        { id: 'new_3', name: 'Команда 3', color: '#2e9e5b', _new: true }
+                    ];
+                }
+
+                renderTeams(teamsContainer, teamsToRender, signups, playerTeamMap);
+                renderPlayers(playersList, signups, playerTeamMap);
+                renderActions(actionsList, actions);
+
+                wireSaveButton(gameId, teamsToRender, playerTeamMap);
+                wireAddActionButton(gameId);
+
+            } catch (err) {
+                console.error('Failed to load game settings:', err);
+                if (errorEl) {
+                    errorEl.textContent = `Ошибка загрузки: ${escapeHtml(err?.message || '')}`;
+                    errorEl.style.display = 'block';
+                }
+            }
+        }
+
+        function renderTeams(container, teams, signups, playerTeamMap) {
+            if (!container) return;
+            container.innerHTML = '';
+            teams.forEach((team, idx) => {
+                const teamEl = document.createElement('div');
+                teamEl.style.border = '1px solid rgba(128,128,128,0.16)';
+                teamEl.style.borderRadius = '10px';
+                teamEl.style.padding = '10px';
+                teamEl.style.background = 'var(--tg-theme-secondary-bg-color, #f5f5f5)';
+                teamEl.style.display = 'flex';
+                teamEl.style.flexDirection = 'column';
+                teamEl.style.gap = '8px';
+
+                const nameInput = document.createElement('input');
+                nameInput.type = 'text';
+                nameInput.value = team.name || `Команда ${idx + 1}`;
+                nameInput.style.padding = '6px 8px';
+                nameInput.style.borderRadius = '6px';
+                nameInput.style.border = '1px solid rgba(128,128,128,0.16)';
+                nameInput.style.fontSize = '14px';
+                nameInput.style.color = 'inherit';
+                nameInput.style.background = 'var(--tg-theme-bg-color, #fff)';
+                nameInput.dataset.teamId = team.id;
+                teamEl.appendChild(nameInput);
+
+                const zone = document.createElement('div');
+                zone.style.border = '2px dashed rgba(128,128,128,0.3)';
+                zone.style.borderRadius = '8px';
+                zone.style.padding = '8px';
+                zone.style.minHeight = '60px';
+                zone.style.background = 'var(--tg-theme-bg-color, #fff)';
+                zone.dataset.teamId = team.id;
+                zone.dataset.dropZone = 'true';
+                zone.classList.add('drop-zone');
+
+                const teamPlayers = signups.filter(s => s.user_id && playerTeamMap[s.user_id] === team.id);
+                teamPlayers.forEach(p => {
+                    zone.appendChild(createPlayerCard(p.user_id, p.first_name || p.username || `Игрок ${p.user_id}`, team.id));
+                });
+
+                teamEl.appendChild(zone);
+                container.appendChild(teamEl);
+            });
+            setupDropZones();
+        }
+
+        function renderPlayers(container, signups, playerTeamMap) {
+            if (!container) return;
+            container.innerHTML = '';
+            const assignedPlayerIds = new Set(Object.values(playerTeamMap));
+            const unassigned = signups.filter(s => s.user_id && !assignedPlayerIds.has(s.user_id));
+            if (unassigned.length === 0) {
+                container.innerHTML = '<div style="color: gray; font-size: 13px; text-align: center; padding: 16px;">Все игроки распределены по командам</div>';
+                return;
+            }
+            const label = document.createElement('div');
+            label.style.fontWeight = 'bold';
+            label.style.marginBottom = '4px';
+            label.textContent = 'Без команды:';
+            container.appendChild(label);
+            unassigned.forEach(p => {
+                container.appendChild(createPlayerCard(p.user_id, p.first_name || p.username || `Игрок ${p.user_id}`, null));
+            });
+        }
+
+        function renderActions(container, actions) {
+            if (!container) return;
+            container.innerHTML = '';
+            if (actions.length === 0) {
+                container.innerHTML = '<div style="color: gray; font-size: 13px; text-align: center; padding: 16px;">Нет действий сообщества</div>';
+                return;
+            }
+            actions.forEach(a => {
+                const actionEl = document.createElement('div');
+                actionEl.style.display = 'flex';
+                actionEl.style.alignItems = 'center';
+                actionEl.style.justifyContent = 'space-between';
+                actionEl.style.padding = '8px 10px';
+                actionEl.style.borderRadius = '8px';
+                actionEl.style.background = 'var(--tg-theme-secondary-bg-color, #f5f5f5)';
+                actionEl.style.border = '1px solid rgba(128,128,128,0.16)';
+
+                const info = document.createElement('span');
+                info.style.flex = '1';
+                info.style.fontSize = '13px';
+                info.style.color = 'inherit';
+                info.textContent = `${escapeHtml(a.title || 'Действие')} (вес: ${a.weight ?? '-'})`;
+
+                const delBtn = document.createElement('button');
+                delBtn.type = 'button';
+                delBtn.textContent = 'Удалить';
+                delBtn.style.padding = '4px 10px';
+                delBtn.style.borderRadius = '6px';
+                delBtn.style.border = 'none';
+                delBtn.style.background = '#d9534f';
+                delBtn.style.color = '#fff';
+                delBtn.style.fontSize = '12px';
+                delBtn.style.cursor = 'pointer';
+                delBtn.dataset.actionId = a.id;
+                delBtn.addEventListener('click', () => deleteCommunityAction(a.id));
+
+                actionEl.appendChild(info);
+                actionEl.appendChild(delBtn);
+                container.appendChild(actionEl);
+            });
+        }
+
+        function createPlayerCard(playerId, name, teamId) {
+            const card = document.createElement('div');
+            card.style.padding = '8px 10px';
+            card.style.borderRadius = '8px';
+            card.style.background = 'var(--tg-theme-bg-color, #fff)';
+            card.style.border = '1px solid rgba(128,128,128,0.16)';
+            card.style.display = 'flex';
+            card.style.alignItems = 'center';
+            card.style.gap = '8px';
+            card.style.cursor = 'grab';
+            card.dataset.playerId = playerId;
+            card.dataset.teamId = teamId || '';
+
+            const dot = document.createElement('span');
+            dot.style.width = '8px';
+            dot.style.height = '8px';
+            dot.style.borderRadius = '50%';
+            dot.style.background = teamId ? '#2e9e5b' : '#e68a1e';
+            card.appendChild(dot);
+
+            const label = document.createElement('span');
+            label.style.fontSize = '13px';
+            label.style.color = 'inherit';
+            label.textContent = escapeHtml(name);
+            card.appendChild(label);
+
+            const teamSelect = document.createElement('select');
+            teamSelect.style.fontSize = '12px';
+            teamSelect.style.padding = '4px 6px';
+            teamSelect.style.borderRadius = '6px';
+            teamSelect.style.border = '1px solid rgba(128,128,128,0.16)';
+            teamSelect.style.background = 'var(--tg-theme-secondary-bg-color, #f5f5f5)';
+            teamSelect.style.color = 'inherit';
+            teamSelect.dataset.playerId = playerId;
+            teamSelect.addEventListener('change', (e) => {
+                card.dataset.teamId = e.target.value;
+                const dotEl = card.querySelector('span');
+                if (dotEl) dotEl.style.background = e.target.value ? '#2e9e5b' : '#e68a1e';
+            });
+            card.appendChild(teamSelect);
+
+            card.draggable = true;
+            card.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', playerId);
+                e.dataTransfer.effectAllowed = 'move';
+                card.style.opacity = '0.5';
+            });
+            card.addEventListener('dragend', () => {
+                card.style.opacity = '1';
+            });
+
+            return card;
+        }
+
+        function setupDropZones() {
+            document.querySelectorAll('[data-drop-zone]').forEach(zone => {
+                zone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    zone.style.borderColor = '#2481cc';
+                });
+                zone.addEventListener('dragleave', () => {
+                    zone.style.borderColor = 'rgba(128,128,128,0.3)';
+                });
+                zone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    const playerId = e.dataTransfer.getData('text/plain');
+                    const playerCard = document.querySelector(`[data-player-id="${playerId}"]`);
+                    if (playerCard) {
+                        playerCard.dataset.teamId = zone.dataset.teamId;
+                        const dotEl = playerCard.querySelector('span');
+                        if (dotEl) dotEl.style.background = '#2e9e5b';
+                        zone.appendChild(playerCard);
+                    }
+                    zone.style.borderColor = 'rgba(128,128,128,0.3)';
+                });
+            });
+        }
+
+        function wireSaveButton(gameId, teamsToRender, playerTeamMap) {
+            const saveBtn = document.getElementById('btnSaveTeams');
+            if (saveBtn) {
+                const newBtn = saveBtn.cloneNode(true);
+                saveBtn.parentNode.replaceChild(newBtn, saveBtn);
+                newBtn.addEventListener('click', () => saveTeamsAndLineups(gameId, teamsToRender, playerTeamMap));
+            }
+        }
+
+        function wireAddActionButton(gameId) {
+            const addBtn = document.getElementById('btnAddAction');
+            if (addBtn) {
+                const newBtn = addBtn.cloneNode(true);
+                addBtn.parentNode.replaceChild(newBtn, addBtn);
+                newBtn.addEventListener('click', () => addCommunityAction(gameId));
+            }
+        }
+
+        async function saveTeamsAndLineups(gameId, teamsToRender, playerTeamMap) {
+            const errorEl = document.getElementById('gameSettingsError');
+            try {
+                const savePromises = [];
+                teamsToRender.forEach(team => {
+                    const input = document.querySelector(`input[data-team-id="${team.id}"]`);
+                    const newName = input ? input.value.trim() : (team.name || 'Команда');
+                    savePromises.push(
+                        apiFetch('/api/match/teams', {
+                            method: 'POST',
+                            body: JSON.stringify({ game_id: gameId, name: newName, color: team.color || '#2481cc' })
+                        }).then(res => {
+                            if (res.team && res.team.id) {
+                                team.id = res.team.id;
+                            }
+                        })
+                    );
+                });
+                await Promise.all(savePromises);
+
+                const updatedMap = {};
+                document.querySelectorAll('[data-player-id]').forEach(card => {
+                    const tid = card.dataset.teamId || null;
+                    if (tid) updatedMap[card.dataset.playerId] = tid;
+                });
+
+                for (const [playerId, teamId] of Object.entries(updatedMap)) {
+                    await apiFetch('/api/match/lineups', {
+                        method: 'POST',
+                        body: JSON.stringify({ game_id: gameId, team_id: teamId, player_id: playerId })
+                    });
+                }
+
+                if (errorEl) {
+                    errorEl.textContent = '✅ Сохранено успешно';
+                    errorEl.style.color = '#2e9e5b';
+                    errorEl.style.display = 'block';
+                }
+                setTimeout(() => loadGameSettings(gameId), 800);
+            } catch (err) {
+                console.error('Failed to save teams/lineups:', err);
+                if (errorEl) {
+                    errorEl.textContent = `Ошибка сохранения: ${escapeHtml(err?.message || '')}`;
+                    errorEl.style.display = 'block';
+                }
+            }
+        }
+
+        async function addCommunityAction(gameId) {
+            const titleInput = document.getElementById('newActionTitle');
+            const errorEl = document.getElementById('gameSettingsError');
+            const title = titleInput?.value?.trim();
+            if (!title) {
+                if (errorEl) {
+                    errorEl.textContent = 'Введите название действия';
+                    errorEl.style.display = 'block';
+                }
+                return;
+            }
+            try {
+                const statusRes = await apiFetch(`/api/signups/status?game_id=${encodeURIComponent(gameId)}`);
+                const game = statusRes.game || {};
+                const chat_id = game.group_id || game.chat_id;
+                if (!chat_id) throw new Error('Не удалось определить chat_id игры');
+                await apiFetch('/api/match/community-actions', {
+                    method: 'POST',
+                    body: JSON.stringify({ chat_id: chat_id, title: title, description: null, is_active: true })
+                });
+                titleInput.value = '';
+                loadGameSettings(gameId);
+            } catch (err) {
+                console.error('Failed to add community action:', err);
+                if (errorEl) {
+                    errorEl.textContent = `Ошибка добавления действия: ${escapeHtml(err?.message || '')}`;
+                    errorEl.style.display = 'block';
+                }
+            }
+        }
+
+        async function deleteCommunityAction(actionId) {
+            const errorEl = document.getElementById('gameSettingsError');
+            if (!confirm('Отключить это действие сообщества?')) return;
+            try {
+                await apiFetch(`/api/match/community-actions/${encodeURIComponent(actionId)}`, { method: 'DELETE' });
+                if (selectedGameId) loadGameSettings(selectedGameId);
+            } catch (err) {
+                console.error('Failed to delete community action:', err);
+                if (errorEl) {
+                    errorEl.textContent = `Ошибка удаления: ${escapeHtml(err?.message || '')}`;
+                    errorEl.style.display = 'block';
+                }
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             window.Telegram?.WebApp?.ready?.();
             window.Telegram?.WebApp?.expand?.();
@@ -244,6 +724,40 @@
             document.querySelectorAll('[data-back-to-menu]').forEach(btn => {
                 btn.addEventListener('click', () => closeAllSections());
             });
+
+            // Открытие раздела игры — загрузить игры в выпадающий список
+            document.getElementById('menu-game')?.addEventListener('click', () => {
+                loadGamesForDropdown();
+                updateGameButtons(null);
+            });
+
+            // Изменение выбора игры
+            gameSelect?.addEventListener('change', (e) => {
+                updateGameButtons(e.target.value);
+            });
+
+            // Назад из настроек игры в раздел игры
+            document.querySelectorAll('[data-back-to-game]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.section-view').forEach(el => el.classList.remove('is-open'));
+                    const target = document.getElementById('gameSection');
+                    if (target) target.classList.add('is-open');
+                });
+            });
+
+            // Старт матча — открыть режим матча для выбранной игры
+            btnGameStart?.addEventListener('click', () => {
+                if (!selectedGameId) return;
+                window.location.href = `index.html?game_id=${encodeURIComponent(selectedGameId)}`;
+            });
+
+            // Настройки состава и действий — только для админа
+            btnGameSettings?.addEventListener('click', () => {
+                if (!selectedGameId) return;
+                openSection('gameSettingsSection');
+                loadGameSettings(selectedGameId);
+            });
+
 
             const myList = document.getElementById('mySignupsList');
             document.getElementById('menu-my-signups')?.addEventListener('click', async () => {

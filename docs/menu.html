@@ -56,30 +56,60 @@
             border-radius: 6px;
         }
 
-        /* Модальные окна */
-        .modal {
+        /* Экран раздела поверх меню */
+        .section-view {
             display: none;
             position: fixed;
             inset: 0;
             z-index: 1000;
-            background: rgba(0, 0, 0, 0.55);
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-        }
-        .modal.is-open {
-            display: flex;
-        }
-        .modal-content {
-            width: 100%;
-            max-width: 420px;
-            max-height: 85vh;
-            overflow-y: auto;
             background: var(--tg-theme-bg-color, #fff);
             color: var(--tg-theme-text-color, #000);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+            overflow-y: auto;
+            padding: 15px;
+        }
+        .section-view.is-open {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .section-inner {
+            width: 100%;
+            max-width: 440px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .back-btn {
+            border: none;
+            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            color: inherit;
+            font-weight: bold;
+            font-size: 14px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .back-btn:hover {
+            opacity: 0.85;
+        }
+        .section-title {
+            margin: 0;
+            font-size: 18px;
+        }
+        .section-body {
+            min-height: 120px;
+        }
+        .empty-placeholder {
+            color: var(--tg-theme-hint-color, #888);
+            font-size: 14px;
+            text-align: center;
+            padding: 32px 16px;
         }
 
         /* Карточки игр */
@@ -102,13 +132,13 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <div id="mainMenuView" class="container">
         <div class="menu-list">
-            <button type="button" id="menu-statistics" class="menu-item">
-                <span>🎮 Statistics</span>
+            <button type="button" data-open-section="otherGamesSection" class="menu-item">
+                <span>🎮 Другие игры</span>
                 <span class="badge">Скоро</span>
             </button>
-            <button type="button" id="menu-my-signups" class="menu-item">
+            <button type="button" id="menu-my-signups" data-open-section="mySignupsSection" class="menu-item">
                 <span>📝 Запись</span>
                 <span>➔</span>
             </button>
@@ -116,42 +146,80 @@
                 <span>📢 Анонсы</span>
                 <span>➔</span>
             </a>
-            <a href="#" id="menu-reports" class="menu-item">
+            <button type="button" data-open-section="reportsSection" class="menu-item">
                 <span>📊 Отчёты</span>
                 <span class="badge">Скоро</span>
-            </a>
-            <a href="#" id="menu-settings" class="menu-item">
+            </button>
+            <button type="button" data-open-section="settingsSection" class="menu-item">
                 <span>⚙️ Настройки</span>
                 <span class="badge">Скоро</span>
-            </a>
+            </button>
         </div>
     </div>
 
-    <div id="otherGamesModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="otherGamesTitle">
-        <div class="modal-content">
-            <h3 id="otherGamesTitle" style="margin-top: 0;">🎮 Statistics</h3>
-            <p style="color: gray; font-size: 14px; line-height: 1.4;">Раздел «Statistics» находится в разработке и скоро появится.</p>
-            <button type="button" id="closeOtherGamesModal" class="menu-item" style="justify-content: center; background: #6c757d; color: #fff; margin-top: 15px;">Закрыть</button>
+    <!-- 1. Другие игры -->
+    <div id="otherGamesSection" class="section-view" role="dialog" aria-modal="true" aria-labelledby="otherGamesTitle">
+        <div class="section-inner">
+            <div class="section-header">
+                <button type="button" class="back-btn" data-back-to-menu>← Назад</button>
+                <h3 id="otherGamesTitle" class="section-title">🎮 Другие игры</h3>
+            </div>
+            <div class="section-body">
+                <div class="empty-placeholder">Раздел в разработке. Скоро здесь появятся другие игры.</div>
+            </div>
         </div>
     </div>
 
-    <div id="mySignupsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="mySignupsTitle">
-        <div class="modal-content">
-            <h3 id="mySignupsTitle" style="margin-top: 0;">📝 Мои записи</h3>
-            <div id="mySignupsList" style="margin-bottom: 15px; color: gray; font-size: 14px;">Загрузка ваших записей...</div>
-            <button type="button" id="closeMySignupsModal" class="menu-item" style="justify-content: center; background: #6c757d; color: #fff; margin-top: 5px;">Закрыть</button>
+    <!-- 2. Запись (Мои записи) -->
+    <div id="mySignupsSection" class="section-view" role="dialog" aria-modal="true" aria-labelledby="mySignupsTitle">
+        <div class="section-inner">
+            <div class="section-header">
+                <button type="button" class="back-btn" data-back-to-menu>← Назад</button>
+                <h3 id="mySignupsTitle" class="section-title">📝 Мои записи</h3>
+            </div>
+            <div class="section-body">
+                <div id="mySignupsList" class="empty-placeholder">Загрузка ваших записей...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Отчёты (пустой раздел с кнопкой Назад) -->
+    <div id="reportsSection" class="section-view" role="dialog" aria-modal="true" aria-labelledby="reportsTitle">
+        <div class="section-inner">
+            <div class="section-header">
+                <button type="button" class="back-btn" data-back-to-menu>← Назад</button>
+                <h3 id="reportsTitle" class="section-title">📊 Отчёты</h3>
+            </div>
+            <div class="section-body">
+                <div class="empty-placeholder"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. Настройки (пустой раздел с кнопкой Назад) -->
+    <div id="settingsSection" class="section-view" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="section-inner">
+            <div class="section-header">
+                <button type="button" class="back-btn" data-back-to-menu>← Назад</button>
+                <h3 id="settingsTitle" class="section-title">⚙️ Настройки</h3>
+            </div>
+            <div class="section-body">
+                <div class="empty-placeholder"></div>
+            </div>
         </div>
     </div>
 
     <script type="module">
         import { apiFetch } from './js/core/api.js';
 
-        function openModal(modal) {
-            if (modal) modal.classList.add('is-open');
+        function openSection(sectionId) {
+            document.querySelectorAll('.section-view').forEach(el => el.classList.remove('is-open'));
+            const target = document.getElementById(sectionId);
+            if (target) target.classList.add('is-open');
         }
 
-        function closeModal(modal) {
-            if (modal) modal.classList.remove('is-open');
+        function closeAllSections() {
+            document.querySelectorAll('.section-view').forEach(el => el.classList.remove('is-open'));
         }
 
         function escapeHtml(value) {
@@ -166,30 +234,22 @@
             window.Telegram?.WebApp?.ready?.();
             window.Telegram?.WebApp?.expand?.();
 
-            document.getElementById('menu-reports')?.addEventListener('click', (e) => {
-                e.preventDefault();
-                alert('Раздел отчётов в разработке');
+            document.querySelectorAll('[data-open-section]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const sectionId = btn.getAttribute('data-open-section');
+                    if (sectionId) openSection(sectionId);
+                });
             });
 
-            document.getElementById('menu-settings')?.addEventListener('click', (e) => {
-                e.preventDefault();
-                alert('Раздел настроек в разработке');
+            document.querySelectorAll('[data-back-to-menu]').forEach(btn => {
+                btn.addEventListener('click', () => closeAllSections());
             });
 
-            const otherModal = document.getElementById('otherGamesModal');
-            document.getElementById('menu-statistics')?.addEventListener('click', () => openModal(otherModal));
-            document.getElementById('closeOtherGamesModal')?.addEventListener('click', () => closeModal(otherModal));
-            otherModal?.addEventListener('click', (e) => {
-                if (e.target === otherModal) closeModal(otherModal);
-            });
-
-            const myModal = document.getElementById('mySignupsModal');
             const myList = document.getElementById('mySignupsList');
-
             document.getElementById('menu-my-signups')?.addEventListener('click', async () => {
-                openModal(myModal);
                 if (myList) {
-                    myList.innerHTML = '<div style="text-align: center; padding: 15px; color: gray;">Загрузка ваших записей...</div>';
+                    myList.className = 'empty-placeholder';
+                    myList.innerHTML = 'Загрузка ваших записей...';
                 }
 
                 try {
@@ -198,12 +258,14 @@
 
                     if (games.length === 0) {
                         if (myList) {
-                            myList.innerHTML = '<div style="text-align: center; padding: 20px; color: gray;">Вы пока не записаны ни на один матч.</div>';
+                            myList.className = 'empty-placeholder';
+                            myList.innerHTML = 'Вы пока не записаны ни на один матч.';
                         }
                         return;
                     }
 
                     if (myList) {
+                        myList.className = '';
                         myList.innerHTML = games.map(item => {
                             const g = item.game || {};
                             const isReserve = item.signup_status === 'reserve';
@@ -229,19 +291,13 @@
                 } catch (err) {
                     console.error('Failed to load my signups:', err);
                     if (myList) {
+                        myList.className = 'empty-placeholder';
                         myList.innerHTML = `
-                            <div style="text-align: center; padding: 15px;">
-                                <p style="color: #d9534f; font-size: 14px; margin-bottom: 10px;">Не удалось загрузить ваши записи.</p>
-                                <p style="color: gray; font-size: 12px; margin: 0;">${escapeHtml(err?.message || '')}</p>
-                            </div>
+                            <p style="color: #d9534f; font-size: 14px; margin: 0 0 8px;">Не удалось загрузить ваши записи.</p>
+                            <p style="color: gray; font-size: 12px; margin: 0;">${escapeHtml(err?.message || '')}</p>
                         `;
                     }
                 }
-            });
-
-            document.getElementById('closeMySignupsModal')?.addEventListener('click', () => closeModal(myModal));
-            myModal?.addEventListener('click', (e) => {
-                if (e.target === myModal) closeModal(myModal);
             });
         });
     </script>

@@ -100,13 +100,14 @@
                 <div class="form-group"><label>Начало:</label><input type="time" id="startTime" required></div>
                 <div class="form-group"><label>Конец:</label><input type="time" id="endTime" required></div>
                 <div class="form-group"><label>Публикация:</label><select id="publishTime"><option value="now">Сразу в группу</option><option value="draft">Только сохранить</option></select></div>
-                <div class="form-group">
-                    <label>Площадка:</label>
-                    <div style="display: flex; gap: 8px;">
-                        <select id="venueSelect" style="flex: 3;" required></select>
-                        <button type="button" id="open-venue-modal" class="btn-secondary btn-sm" style="flex: 1; margin-top: 0;">➕</button>
-                    </div>
-                </div>
+    <div class="form-group">
+        <label id="venueLabel">Площадка:</label>
+        <div style="display: flex; gap: 8px;">
+            <select id="venueSelect" style="flex: 3;" required disabled></select>
+            <button type="button" id="open-venue-modal" class="btn-secondary btn-sm" style="flex: 1; margin-top: 0;" disabled title="Сначала выберите группу">➕</button>
+        </div>
+        <small id="venueHelperText" style="display: block; color: #e68a1e; font-size: 11px; margin-top: 3px;">⚠️ Сначала выберите группу</small>
+    </div>
                 <div class="form-group"><label>Стоимость:</label><input type="text" id="cost" value="2500 kzt" required></div>
                 <div class="form-group"><label>Лимит игроков:</label><input type="number" id="maxPlayers" value="18" required></div>
                 <div class="form-group"><label>Организатор:</label><input type="text" id="orgName" required></div>

@@ -1,6 +1,9 @@
 import { apiFetch } from '../core/api.js';
 import { tg } from '../core/tg.js';
 
+import { apiFetch } from '../core/api.js';
+import { tg } from '../core/tg.js';
+
 export async function initVenues() {
     const venueSelect = document.getElementById('venueSelect');
     const venueModal = document.getElementById('venueModal');
@@ -8,6 +11,7 @@ export async function initVenues() {
     const closeVenueModalBtn = document.getElementById('close-venue-modal');
     const venueForm = document.getElementById('venueForm');
     const chatSelect = document.getElementById('chatSelect');
+    const venueHelperText = document.getElementById('venueHelperText');
 
     function getActiveChatId() {
         if (chatSelect && chatSelect.value) {
@@ -16,11 +20,41 @@ export async function initVenues() {
         return localStorage.getItem('activeChatId') || '';
     }
 
+    function updateVenueState() {
+        const chatId = getActiveChatId();
+        const isValid = Boolean(chatId && String(chatId).trim() !== '');
+
+        if (venueSelect) {
+            venueSelect.disabled = !isValid;
+        }
+        if (openVenueModalBtn) {
+            openVenueModalBtn.disabled = !isValid;
+            openVenueModalBtn.style.opacity = isValid ? '1' : '0.6';
+            openVenueModalBtn.style.cursor = isValid ? 'pointer' : 'not-allowed';
+        }
+        if (venueHelperText) {
+            if (isValid) {
+                venueHelperText.style.display = 'none';
+            } else {
+                venueHelperText.style.display = 'block';
+                venueHelperText.textContent = '⚠️ Сначала выберите группу';
+            }
+        }
+    }
+
     async function loadVenues() {
         if (!venueSelect) return;
         const chatId = getActiveChatId();
+        
+        updateVenueState();
+
+        if (!chatId) {
+            venueSelect.innerHTML = '<option value="">-- Сначала выберите группу --</option>';
+            return;
+        }
+
         try {
-            const url = chatId ? `/api/venues?chat_id=${encodeURIComponent(chatId)}` : '/api/venues';
+            const url = `/api/venues?chat_id=${encodeURIComponent(chatId)}`;
             const venues = await apiFetch(url);
             venueSelect.innerHTML = '<option value="">-- Выберите площадку --</option>';
             venues.forEach(v => {
@@ -36,6 +70,7 @@ export async function initVenues() {
         }
     }
 
+    updateVenueState();
     await loadVenues();
 
     window.addEventListener('activeChatChanged', async () => {
@@ -49,7 +84,14 @@ export async function initVenues() {
     }
 
     if (openVenueModalBtn && venueModal) {
-        openVenueModalBtn.onclick = () => { venueModal.style.display = 'flex'; };
+        openVenueModalBtn.onclick = () => {
+            const chatId = getActiveChatId();
+            if (!chatId) {
+                tg.showAlert('⚠️ Сначала выберите группу!');
+                return;
+            }
+            venueModal.style.display = 'flex';
+        };
     }
     if (closeVenueModalBtn && venueModal) {
         closeVenueModalBtn.onclick = () => { venueModal.style.display = 'none'; };
@@ -87,4 +129,5 @@ export async function initVenues() {
         };
     }
 }
+
 

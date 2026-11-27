@@ -6,6 +6,9 @@
     <title>Меню бота</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
+        * {
+            box-sizing: border-box;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--tg-theme-bg-color, #fff);
@@ -16,12 +19,22 @@
             flex-direction: column;
             align-items: center;
         }
-        .container { width: 100%; max-width: 440px; }
-        .menu-list { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+        .container {
+            width: 100%;
+            max-width: 440px;
+        }
+        .menu-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 20px;
+        }
         .menu-item {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            width: 100%;
+            border: none;
             background: var(--tg-theme-secondary-bg-color, #f5f5f5);
             padding: 16px 20px;
             border-radius: 12px;
@@ -29,9 +42,12 @@
             color: inherit;
             font-weight: bold;
             font-size: 16px;
+            cursor: pointer;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
         }
-        .menu-item:hover { opacity: 0.9; }
+        .menu-item:hover {
+            opacity: 0.9;
+        }
         .badge {
             font-size: 12px;
             background: #2481cc;
@@ -39,13 +55,54 @@
             padding: 3px 8px;
             border-radius: 6px;
         }
+
+        /* Модальные окна */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.55);
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .modal.is-open {
+            display: flex;
+        }
+        .modal-content {
+            width: 100%;
+            max-width: 420px;
+            max-height: 85vh;
+            overflow-y: auto;
+            background: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+        }
+
+        /* Карточки игр */
+        .game-card {
+            display: block;
+            text-decoration: none;
+            color: inherit;
+            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            border-radius: 12px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            border: 1px solid rgba(128, 128, 128, 0.16);
+        }
+        .game-card:last-child {
+            margin-bottom: 0;
+        }
+        .game-card:hover {
+            opacity: 0.92;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- <h2 style="text-align: center; margin-top: 10px;">🏐 Волейбольный бот</h2> -->
-        <!-- <p style="text-align: center; color: gray; font-size: 14px; margin-bottom: 25px;">Главное меню</p> -->
-
         <div class="menu-list">
             <button type="button" id="menu-statistics" class="menu-item">
                 <span>🎮 Statistics</span>
@@ -70,16 +127,17 @@
         </div>
     </div>
 
-    <div id="otherGamesModal" class="modal">
+    <div id="otherGamesModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="otherGamesTitle">
         <div class="modal-content">
-            <h3 style="margin-top: 0;">🎮 Statistics</h3>
+            <h3 id="otherGamesTitle" style="margin-top: 0;">🎮 Statistics</h3>
             <p style="color: gray; font-size: 14px; line-height: 1.4;">Раздел «Statistics» находится в разработке и скоро появится.</p>
             <button type="button" id="closeOtherGamesModal" class="menu-item" style="justify-content: center; background: #6c757d; color: #fff; margin-top: 15px;">Закрыть</button>
         </div>
     </div>
-    <div id="mySignupsModal" class="modal">
+
+    <div id="mySignupsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="mySignupsTitle">
         <div class="modal-content">
-            <h3 style="margin-top: 0;">📝 Мои записи</h3>
+            <h3 id="mySignupsTitle" style="margin-top: 0;">📝 Мои записи</h3>
             <div id="mySignupsList" style="margin-bottom: 15px; color: gray; font-size: 14px;">Загрузка ваших записей...</div>
             <button type="button" id="closeMySignupsModal" class="menu-item" style="justify-content: center; background: #6c757d; color: #fff; margin-top: 5px;">Закрыть</button>
         </div>
@@ -88,7 +146,23 @@
     <script type="module">
         import { apiFetch } from './js/core/api.js';
 
-        document.addEventListener('DOMContentLoaded', async () => {
+        function openModal(modal) {
+            if (modal) modal.classList.add('is-open');
+        }
+
+        function closeModal(modal) {
+            if (modal) modal.classList.remove('is-open');
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
             window.Telegram?.WebApp?.ready?.();
             window.Telegram?.WebApp?.expand?.();
 
@@ -103,62 +177,71 @@
             });
 
             const otherModal = document.getElementById('otherGamesModal');
-            document.getElementById('menu-statistics')?.addEventListener('click', () => {
-                if (otherModal) otherModal.style.display = 'flex';
-            });
-            document.getElementById('closeOtherGamesModal')?.addEventListener('click', () => {
-                if (otherModal) otherModal.style.display = 'none';
+            document.getElementById('menu-statistics')?.addEventListener('click', () => openModal(otherModal));
+            document.getElementById('closeOtherGamesModal')?.addEventListener('click', () => closeModal(otherModal));
+            otherModal?.addEventListener('click', (e) => {
+                if (e.target === otherModal) closeModal(otherModal);
             });
 
             const myModal = document.getElementById('mySignupsModal');
             const myList = document.getElementById('mySignupsList');
+
             document.getElementById('menu-my-signups')?.addEventListener('click', async () => {
-                if (myModal) myModal.style.display = 'flex';
-                if (myList) myList.innerHTML = '<div style="text-align: center; padding: 15px; color: gray;">Загрузка ваших записей...</div>';
+                openModal(myModal);
+                if (myList) {
+                    myList.innerHTML = '<div style="text-align: center; padding: 15px; color: gray;">Загрузка ваших записей...</div>';
+                }
 
                 try {
                     const res = await apiFetch('/api/signups/my-games');
-                    const games = res?.games || [];
+                    const games = Array.isArray(res?.games) ? res.games : [];
+
                     if (games.length === 0) {
-                        myList.innerHTML = '<div style="text-align: center; padding: 20px; color: gray;">Вы пока не записаны ни на один матч.</div>';
+                        if (myList) {
+                            myList.innerHTML = '<div style="text-align: center; padding: 20px; color: gray;">Вы пока не записаны ни на один матч.</div>';
+                        }
                         return;
                     }
 
-                    myList.innerHTML = games.map(item => {
-                        const g = item.game || {};
-                        const statusText = item.signup_status === 'reserve' ? '⚠️ В резерве' : '✅ В основном составе';
-                        const paidText = item.is_paid ? '💳 Оплачено' : '⏳ Не оплачено';
-                        const dateStr = g.date || 'Уточняется';
-                        const timeStr = g.time_start ? `${g.time_start}` : '';
-                        const locStr = g.loc_name || 'Площадка';
-                        const gameId = g.id;
+                    if (myList) {
+                        myList.innerHTML = games.map(item => {
+                            const g = item.game || {};
+                            const isReserve = item.signup_status === 'reserve';
+                            const statusText = isReserve ? '⚠️ В резерве' : '✅ В основном составе';
+                            const paidText = item.is_paid ? '💳 Оплачено' : '⏳ Не оплачено';
+                            const dateStr = escapeHtml(g.date || 'Уточняется');
+                            const timeStr = g.time_start ? escapeHtml(g.time_start) : '';
+                            const locStr = escapeHtml(g.loc_name || g.venue_name || 'Площадка');
+                            const gameId = encodeURIComponent(g.id ?? item.game_id ?? '');
 
-                        return `
-                            <a href="index.html?game_id=${encodeURIComponent(gameId)}" class="game-card">
-                                <div style="font-weight: bold; margin-bottom: 4px; color: inherit;">📅 ${dateStr} ${timeStr}</div>
-                                <div style="color: gray; margin-bottom: 6px;">📍 ${locStr}</div>
-                                <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: bold;">
-                                    <span style="color: ${item.signup_status === 'reserve' ? '#e68a1e' : '#2e9e5b'}">${statusText}</span>
-                                    <span style="color: ${item.is_paid ? '#2e9e5b' : '#e68a1e'}">${paidText}</span>
-                                </div>
-                            </a>
-                        `;
-                    }).join('');
+                            return `
+                                <a href="index.html?game_id=${gameId}" class="game-card">
+                                    <div style="font-weight: bold; margin-bottom: 4px; color: inherit;">📅 ${dateStr} ${timeStr}</div>
+                                    <div style="color: gray; margin-bottom: 6px;">📍 ${locStr}</div>
+                                    <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: bold;">
+                                        <span style="color: ${isReserve ? '#e68a1e' : '#2e9e5b'}">${statusText}</span>
+                                        <span style="color: ${item.is_paid ? '#2e9e5b' : '#e68a1e'}">${paidText}</span>
+                                    </div>
+                                </a>
+                            `;
+                        }).join('');
+                    }
                 } catch (err) {
                     console.error('Failed to load my signups:', err);
                     if (myList) {
                         myList.innerHTML = `
                             <div style="text-align: center; padding: 15px;">
                                 <p style="color: #d9534f; font-size: 14px; margin-bottom: 10px;">Не удалось загрузить ваши записи.</p>
-                                <p style="color: gray; font-size: 12px; margin: 0;">${err.message || ''}</p>
+                                <p style="color: gray; font-size: 12px; margin: 0;">${escapeHtml(err?.message || '')}</p>
                             </div>
                         `;
                     }
                 }
             });
 
-            document.getElementById('closeMySignupsModal')?.addEventListener('click', () => {
-                if (myModal) myModal.style.display = 'none';
+            document.getElementById('closeMySignupsModal')?.addEventListener('click', () => closeModal(myModal));
+            myModal?.addEventListener('click', (e) => {
+                if (e.target === myModal) closeModal(myModal);
             });
         });
     </script>

@@ -6,13 +6,42 @@
     <title>Запись на матч</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
         .container { width: 100%; max-width: 440px; }
         .section { margin-bottom: 20px; }
         .form-group { margin-bottom: 12px; text-align: left; }
         label { display: block; font-size: 13px; color: gray; margin-bottom: 4px; }
-        select, input { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: inherit; }
-        button { background-color: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); border: none; border-radius: 8px; padding: 12px 20px; font-size: 15px; font-weight: bold; width: 100%; cursor: pointer; margin-top: 10px; }
+        select, input {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 15px;
+            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            color: inherit;
+        }
+        button {
+            background-color: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, #fff);
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-size: 15px;
+            font-weight: bold;
+            width: 100%;
+            cursor: pointer;
+            margin-top: 10px;
+        }
         .btn-secondary { background-color: #6c757d; }
         .btn-danger { background-color: #d9534f; }
         .btn-gold { background-color: #c59b27; color: #fff; }
@@ -39,7 +68,7 @@
 <body>
     <div class="container">
         <div id="signupSection" class="section active">
-            <h2 style="margin-top:0;">🏐 Запись на матч</h2>
+            <h2 style="margin-top: 0;">🏐 Запись на матч</h2>
             <div id="game-details" class="game-header">Загрузка информации...</div>
             <div id="status-container" class="status-box" style="display: none;">
                 <p id="status-text" style="margin: 0 0 5px 0; font-weight: bold;"></p>
@@ -63,50 +92,92 @@
             </div>
         </div>
 
-        <div id="playerModal" class="modal"><div class="modal-content">
-            <h3 id="playerModalTitle" style="margin-top: 0;">Добавить игрока</h3>
-            <div class="tab-switcher" style="margin-bottom: 10px;">
-                <button type="button" id="tab-db-players" class="tab-btn active">Из базы</button>
-                <button type="button" id="tab-new-player" class="tab-btn">Новый игрок</button>
-            </div>
-            <div id="dbPlayersPane">
-                <div class="form-group" style="margin-bottom: 6px;">
-                    <input type="text" id="playerSearchInput" placeholder="🔍 Поиск по имени, @username или TG ID...">
+        <div id="playerModal" class="modal">
+            <div class="modal-content">
+                <h3 id="playerModalTitle" style="margin-top: 0;">Добавить игрока</h3>
+                <div class="tab-switcher" style="margin-bottom: 10px;">
+                    <button type="button" id="tab-db-players" class="tab-btn active">Из базы</button>
+                    <button type="button" id="tab-new-player" class="tab-btn">Новый игрок</button>
                 </div>
-                <div class="form-group" style="margin-bottom: 6px;">
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                        <input type="checkbox" id="dbSelectIsPaid" style="width: auto;">
-                        <span>Сразу отметить как оплатившего</span>
-                    </label>
+                <div id="dbPlayersPane">
+                    <div class="form-group" style="margin-bottom: 6px;">
+                        <input type="text" id="playerSearchInput" placeholder="🔍 Поиск по имени, @username или TG ID...">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 6px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" id="dbSelectIsPaid" style="width: auto;">
+                            <span>Сразу отметить как оплатившего</span>
+                        </label>
+                    </div>
+                    <div id="dbPlayersList" class="db-players-scroll">Загрузка базы игроков...</div>
+                    <button type="button" id="close-player-modal-db" class="btn-secondary">Закрыть</button>
                 </div>
-                <div id="dbPlayersList" class="db-players-scroll">Загрузка базы игроков...</div>
-                <button type="button" id="close-player-modal-db" class="btn-secondary">Закрыть</button>
+                <div id="newPlayerPane" style="display: none;">
+                    <form id="playerForm">
+                        <input type="hidden" id="editPlayerId">
+                        <div class="form-group">
+                            <label>Имя *:</label>
+                            <input type="text" id="modalUserName" placeholder="Например: Алексей К." required>
+                        </div>
+                        <div class="form-group">
+                            <label>Пол *:</label>
+                            <select id="modalUserGender" required>
+                                <option value="male">Мужской</option>
+                                <option value="female">Женский</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Telegram ID:</label>
+                            <input type="number" id="modalTelegramId" placeholder="Например: 123456789">
+                        </div>
+                        <div class="form-group">
+                            <label>Telegram username:</label>
+                            <input type="text" id="modalTelegramUsername" placeholder="@username">
+                        </div>
+                        <div class="form-group" id="addToMatchOptionGroup">
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="checkbox" id="modalAddToMatch" checked style="width: auto;">
+                                <span>Сразу добавить в текущий матч</span>
+                            </label>
+                        </div>
+                        <div class="form-group" id="modalIsPaidGroup">
+                            <label>Оплата в матче:</label>
+                            <select id="modalIsPaid">
+                                <option value="false">Не оплатил</option>
+                                <option value="true">Оплатил</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="submit" id="savePlayerSubmitBtn">Сохранить</button>
+                            <button type="button" id="close-player-modal" class="btn-secondary">Отмена</button>
+                        </div>
+                    </form>
+                </div>
             </div>
-            <div id="newPlayerPane" style="display: none;">
-                <form id="playerForm">
-                    <input type="hidden" id="editPlayerId">
-                    <div class="form-group"><label>Имя *:</label><input type="text" id="modalUserName" placeholder="Например: Алексей К." required></div>
-                    <div class="form-group"><label>Пол *:</label><select id="modalUserGender" required><option value="male">Мужской</option><option value="female">Женский</option></select></div>
-                    <div class="form-group"><label>Telegram ID:</label><input type="number" id="modalTelegramId" placeholder="Например: 123456789"></div>
-                    <div class="form-group"><label>Telegram username:</label><input type="text" id="modalTelegramUsername" placeholder="@username"></div>
-                    <div class="form-group" id="addToMatchOptionGroup"><label style="display: flex; align-items: center; gap: 6px; cursor: pointer;"><input type="checkbox" id="modalAddToMatch" checked style="width: auto;"><span>Сразу добавить в текущий матч</span></label></div>
-                    <div class="form-group" id="modalIsPaidGroup"><label>Оплата в матче:</label><select id="modalIsPaid"><option value="false">Не оплатил</option><option value="true">Оплатил</option></select></div>
-                    <div style="display: flex; gap: 10px;"><button type="submit" id="savePlayerSubmitBtn">Сохранить</button><button type="button" id="close-player-modal" class="btn-secondary">Отмена</button></div>
-                </form>
-            </div>
-        </div></div>
+        </div>
 
-        <div id="receiptModal" class="modal"><div class="modal-content">
-            <h3>Загрузка чека</h3>
-            <p style="font-size: 13px; color: gray; margin-top: 0;">Выберите файл чека (загрузка пока без действий на сервере).</p>
-            <div class="form-group"><label>Файл чека:</label><input type="file" id="receiptFileInput" accept="image/*,.pdf"></div>
-            <div style="display: flex; gap: 10px;"><button type="button" id="submit-receipt-btn">Прикрепить чек</button><button type="button" id="close-receipt-modal" class="btn-secondary">Закрыть</button></div>
-        </div></div>
+        <div id="receiptModal" class="modal">
+            <div class="modal-content">
+                <h3>Загрузка чека</h3>
+                <p style="font-size: 13px; color: gray; margin-top: 0;">Выберите файл чека (загрузка пока без действий на сервере).</p>
+                <div class="form-group">
+                    <label>Файл чека:</label>
+                    <input type="file" id="receiptFileInput" accept="image/*,.pdf">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" id="submit-receipt-btn">Прикрепить чек</button>
+                    <button type="button" id="close-receipt-modal" class="btn-secondary">Закрыть</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script type="module">
         import { initSignups } from './js/modules/signups.js';
-        document.addEventListener("DOMContentLoaded", async () => {
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            window.Telegram?.WebApp?.ready?.();
+            window.Telegram?.WebApp?.expand?.();
             await initSignups();
         });
     </script>

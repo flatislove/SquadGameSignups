@@ -71,7 +71,7 @@
         .match-score-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
         .match-team { display: flex; align-items: center; gap: 8px; flex: 1; }
         .btn-team-icon { width: 34px; height: 34px; border-radius: 50%; background: var(--tg-theme-secondary-bg-color, #e0e0e0); color: inherit; border: 1px solid rgba(128,128,128,0.16); font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
-        .btn-team-name { flex: 1; text-align: left; padding: 8px 10px; border-radius: 8px; background: var(--tg-theme-secondary-bg-color, #f0f0f0); color: inherit; border: 1px solid rgba(128,128,128,0.16); font-weight: 600; font-size: 15px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .btn-team-name { flex: 1; min-width: 0; text-align: left; padding: 8px 10px; border-radius: 8px; background: var(--tg-theme-secondary-bg-color, #f0f0f0); color: inherit; border: 1px solid rgba(128,128,128,0.16); font-weight: 600; font-size: 15px; cursor: pointer; white-space: normal; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
         .match-score { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
         .match-score-digit { font-size: 34px; font-weight: 800; min-width: 44px; text-align: center; }
         .match-score-digit.swipe-anim { animation: swipeAnim 0.3s ease; }
@@ -444,7 +444,8 @@
         function getLineupForTeam(teamId) {
             return matchState.lineups.filter(l => l.team_id === teamId).map(l => {
                 const p = matchState.signups.find(s => s.user_id === l.player_id);
-                return { ...l, name: p ? (p.first_name || p.username || `Игрок ${p.user_id}`) : `Игрок ${l.player_id}` };
+                const pName = p ? (p.first_name || p.username || (p.user && (p.user.first_name || p.user.username)) || `Игрок ${p.user_id}`) : `Игрок ${l.player_id}`;
+                return { ...l, name: pName };
             });
         }
 
@@ -484,6 +485,14 @@
         function renderLog() {
             const container = document.getElementById('matchLogList');
             container.innerHTML = '<div class="match-empty">Лог действий пуст</div>';
+        }
+
+        function getActionWeight(a) {
+            if (a.weight != null) return a.weight;
+            if (a.action_weight != null) return a.action_weight;
+            if (a.points != null) return a.points;
+            if (a.payload && a.payload.weight != null) return a.payload.weight;
+            return null;
         }
 
         function setupMatchEventListeners() {
@@ -642,7 +651,7 @@
                 btn.style.color = 'inherit';
                 btn.style.fontSize = '13px';
                 btn.style.cursor = 'pointer';
-                btn.textContent = `${a.title || 'Действие'} (вес ${a.weight ?? '-'})`;
+                btn.textContent = `${a.title || 'Действие'} (вес: ${getActionWeight(a) != null ? getActionWeight(a) : '-'})`;
                 btn.addEventListener('click', () => {
                     logAction(playerId, a.action_type || a.title, a.weight);
                     closeModal('actionModal');

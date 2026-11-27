@@ -450,7 +450,8 @@
 
                 const teamPlayers = signups.filter(s => s.user_id && playerTeamMap[s.user_id] === team.id);
                 teamPlayers.forEach(p => {
-                    zone.appendChild(createPlayerCard(p.user_id, p.first_name || p.username || `Игрок ${p.user_id}`, team.id));
+                    const pName = p.first_name || p.username || (p.user && (p.user.first_name || p.user.username)) || `Игрок ${p.user_id}`;
+                    zone.appendChild(createPlayerCard(p.user_id, pName, team.id));
                 });
 
                 teamEl.appendChild(zone);
@@ -474,7 +475,8 @@
             label.textContent = 'Без команды:';
             container.appendChild(label);
             unassigned.forEach(p => {
-                container.appendChild(createPlayerCard(p.user_id, p.first_name || p.username || `Игрок ${p.user_id}`, null));
+                const pName = p.first_name || p.username || (p.user && (p.user.first_name || p.user.username)) || `Игрок ${p.user_id}`;
+                container.appendChild(createPlayerCard(p.user_id, pName, null));
             });
         }
 
@@ -485,6 +487,14 @@
                 container.innerHTML = '<div style="color: gray; font-size: 13px; text-align: center; padding: 16px;">Нет действий сообщества</div>';
                 return;
             }
+            const getActionWeight = (a) => {
+                if (a.weight != null) return a.weight;
+                if (a.action_weight != null) return a.action_weight;
+                if (a.points != null) return a.points;
+                if (a.payload && a.payload.weight != null) return a.payload.weight;
+                return null;
+            };
+
             actions.forEach(a => {
                 const actionEl = document.createElement('div');
                 actionEl.style.display = 'flex';
@@ -499,7 +509,8 @@
                 info.style.flex = '1';
                 info.style.fontSize = '13px';
                 info.style.color = 'inherit';
-                info.textContent = `${escapeHtml(a.title || 'Действие')} (вес: ${a.weight ?? '-'})`;
+                const w = getActionWeight(a);
+                info.textContent = `${escapeHtml(a.title || 'Действие')} (вес: ${w != null ? w : '-'})`;
 
                 const delBtn = document.createElement('button');
                 delBtn.type = 'button';
@@ -722,7 +733,11 @@
             });
 
             document.querySelectorAll('[data-back-to-menu]').forEach(btn => {
-                btn.addEventListener('click', () => closeAllSections());
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeAllSections();
+                });
             });
 
             // Открытие раздела игры — загрузить игры в выпадающий список
@@ -738,7 +753,9 @@
 
             // Назад из настроек игры в раздел игры
             document.querySelectorAll('[data-back-to-game]').forEach(btn => {
-                btn.addEventListener('click', () => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     document.querySelectorAll('.section-view').forEach(el => el.classList.remove('is-open'));
                     const target = document.getElementById('gameSection');
                     if (target) target.classList.add('is-open');

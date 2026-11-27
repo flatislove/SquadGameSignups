@@ -25,7 +25,14 @@ function formatPlayerDisplayName(rawName) {
 
 function resolveAnnouncementGameId() {
     if (window.CURRENT_GAME_ID) {
-        return String(window.CURRENT_GAME_ID);
+        return String(window.CURRENT_GAME_ID).trim();
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const queryGameId = searchParams.get('game_id')?.trim();
+    if (queryGameId) {
+        window.CURRENT_GAME_ID = queryGameId;
+        return queryGameId;
     }
 
     const startParam = tg?.initDataUnsafe?.start_param;

@@ -1,7 +1,7 @@
 from datetime import datetime
 from html import escape
 import logging
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
 
 logger = logging.getLogger(__name__)
@@ -95,18 +95,24 @@ def build_announcement_text(
     return "\n".join(lines)
 
 
-def _build_signup_button(web_app_url: str) -> InlineKeyboardButton:
+def _build_signup_button(signup_url: str) -> InlineKeyboardButton:
     try:
         return InlineKeyboardButton(
             text="Запись",
-            url=web_app_url,
+            url=signup_url,
             api_kwargs={"style": "success"},
         )
     except TypeError:
         return InlineKeyboardButton(
             text="Запись",
-            url=web_app_url,
+            url=signup_url,
         )
+
+
+def build_signup_deep_link(game_id: str, bot_username: str) -> str:
+    clean_username = str(bot_username or "").strip().lstrip("@")
+    clean_game_id = str(game_id or "").strip()
+    return f"https://t.me/{clean_username}?startapp=game_{clean_game_id}"
 
 
 class TelegramGateway:
@@ -117,8 +123,8 @@ class TelegramGateway:
         self._bot = bot
 
     def build_markup(self, game_id: str, bot_username: str) -> InlineKeyboardMarkup:
-        web_app_url = f"https://t.me/{bot_username}?startapp=game_{game_id}"
-        return InlineKeyboardMarkup([[_build_signup_button(web_app_url)]])
+        signup_url = build_signup_deep_link(game_id=game_id, bot_username=bot_username)
+        return InlineKeyboardMarkup([[_build_signup_button(signup_url)]])
 
     async def send_game_announcement(
         self,

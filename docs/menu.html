@@ -43,30 +43,45 @@
 </head>
 <body>
     <div class="container">
-        <h2 style="text-align: center; margin-top: 10px;">🏐 Волейбольный бот</h2>
-        <p style="text-align: center; color: gray; font-size: 14px; margin-bottom: 25px;">Главное меню</p>
+        <!-- <h2 style="text-align: center; margin-top: 10px;">🏐 Волейбольный бот</h2> -->
+        <!-- <p style="text-align: center; color: gray; font-size: 14px; margin-bottom: 25px;">Главное меню</p> -->
 
         <div class="menu-list">
-            <a href="index.html?view=signup" id="menu-game" class="menu-item">
-                <span>1. 🎮 Игра (Ближайшая)</span>
+            <button type="button" id="menu-statistics" class="menu-item">
+                <span>🎮 Statistics</span>
+                <span class="badge">Скоро</span>
+            </button>
+            <button type="button" id="menu-my-signups" class="menu-item">
+                <span>📝 Запись</span>
                 <span>➔</span>
-            </a>
-            <a href="index.html?view=signup" class="menu-item">
-                <span>2. 📝 Запись</span>
-                <span>➔</span>
-            </a>
+            </button>
             <a href="index.html?view=create" class="menu-item">
-                <span>3. 📢 Анонсы</span>
+                <span>📢 Анонсы</span>
                 <span>➔</span>
             </a>
             <a href="#" id="menu-reports" class="menu-item">
-                <span>4. 📊 Отчёты</span>
+                <span>📊 Отчёты</span>
                 <span class="badge">Скоро</span>
             </a>
             <a href="#" id="menu-settings" class="menu-item">
-                <span>5. ⚙️ Настройки</span>
+                <span>⚙️ Настройки</span>
                 <span class="badge">Скоро</span>
             </a>
+        </div>
+    </div>
+
+    <div id="otherGamesModal" class="modal">
+        <div class="modal-content">
+            <h3 style="margin-top: 0;">🎮 Statistics</h3>
+            <p style="color: gray; font-size: 14px; line-height: 1.4;">Раздел «Statistics» находится в разработке и скоро появится.</p>
+            <button type="button" id="closeOtherGamesModal" class="menu-item" style="justify-content: center; background: #6c757d; color: #fff; margin-top: 15px;">Закрыть</button>
+        </div>
+    </div>
+    <div id="mySignupsModal" class="modal">
+        <div class="modal-content">
+            <h3 style="margin-top: 0;">📝 Мои записи</h3>
+            <div id="mySignupsList" style="margin-bottom: 15px; color: gray; font-size: 14px;">Загрузка ваших записей...</div>
+            <button type="button" id="closeMySignupsModal" class="menu-item" style="justify-content: center; background: #6c757d; color: #fff; margin-top: 5px;">Закрыть</button>
         </div>
     </div>
 
@@ -87,16 +102,64 @@
                 alert('Раздел настроек в разработке');
             });
 
-            const gameLink = document.getElementById('menu-game');
-            try {
-                const latest = await apiFetch('/api/games/latest');
-                const gameId = latest?.id || latest?.game?.id;
-                if (gameId && gameLink) {
-                    gameLink.href = `index.html?game_id=${encodeURIComponent(String(gameId))}`;
+            const otherModal = document.getElementById('otherGamesModal');
+            document.getElementById('menu-statistics')?.addEventListener('click', () => {
+                if (otherModal) otherModal.style.display = 'flex';
+            });
+            document.getElementById('closeOtherGamesModal')?.addEventListener('click', () => {
+                if (otherModal) otherModal.style.display = 'none';
+            });
+
+            const myModal = document.getElementById('mySignupsModal');
+            const myList = document.getElementById('mySignupsList');
+            document.getElementById('menu-my-signups')?.addEventListener('click', async () => {
+                if (myModal) myModal.style.display = 'flex';
+                if (myList) myList.innerHTML = '<div style="text-align: center; padding: 15px; color: gray;">Загрузка ваших записей...</div>';
+
+                try {
+                    const res = await apiFetch('/api/signups/my-games');
+                    const games = res?.games || [];
+                    if (games.length === 0) {
+                        myList.innerHTML = '<div style="text-align: center; padding: 20px; color: gray;">Вы пока не записаны ни на один матч.</div>';
+                        return;
+                    }
+
+                    myList.innerHTML = games.map(item => {
+                        const g = item.game || {};
+                        const statusText = item.signup_status === 'reserve' ? '⚠️ В резерве' : '✅ В основном составе';
+                        const paidText = item.is_paid ? '💳 Оплачено' : '⏳ Не оплачено';
+                        const dateStr = g.date || 'Уточняется';
+                        const timeStr = g.time_start ? `${g.time_start}` : '';
+                        const locStr = g.loc_name || 'Площадка';
+                        const gameId = g.id;
+
+                        return `
+                            <a href="index.html?game_id=${encodeURIComponent(gameId)}" class="game-card">
+                                <div style="font-weight: bold; margin-bottom: 4px; color: inherit;">📅 ${dateStr} ${timeStr}</div>
+                                <div style="color: gray; margin-bottom: 6px;">📍 ${locStr}</div>
+                                <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: bold;">
+                                    <span style="color: ${item.signup_status === 'reserve' ? '#e68a1e' : '#2e9e5b'}">${statusText}</span>
+                                    <span style="color: ${item.is_paid ? '#2e9e5b' : '#e68a1e'}">${paidText}</span>
+                                </div>
+                            </a>
+                        `;
+                    }).join('');
+                } catch (err) {
+                    console.error('Failed to load my signups:', err);
+                    if (myList) {
+                        myList.innerHTML = `
+                            <div style="text-align: center; padding: 15px;">
+                                <p style="color: #d9534f; font-size: 14px; margin-bottom: 10px;">Не удалось загрузить ваши записи.</p>
+                                <p style="color: gray; font-size: 12px; margin: 0;">${err.message || ''}</p>
+                            </div>
+                        `;
+                    }
                 }
-            } catch (e) {
-                // Оставляем запасную ссылку на раздел записи
-            }
+            });
+
+            document.getElementById('closeMySignupsModal')?.addEventListener('click', () => {
+                if (myModal) myModal.style.display = 'none';
+            });
         });
     </script>
 </body>

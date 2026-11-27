@@ -226,6 +226,52 @@ async def _sync_announcement_message(game_id: str) -> None:
 
 
 @router.get("/players")
+@router.get("/my-games")
+async def get_my_games(user: dict = Depends(get_current_user)):
+    """Returns all games where the current user is signed up, along with their signup status."""
+    user_id = user.get("id")
+    if not user_id:
+        return {"games": []}
+
+    db = get_db()
+    try:
+        signups_res = await _db(
+            lambda: db.table("signups")
+            .select("game_id, status, is_paid")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        signups = signups_res.data or []
+        if not signups:
+            return {"games": []}
+
+        game_ids = list({s["game_id"] for s in signups if s.get("game_id")})
+        signup_map = {s["game_id"]: {"status": s.get("status"), "is_paid": s.get("is_paid")} for s in signups}
+
+        games_res = await _db(
+            lambda: db.table("games")
+            .select("*")
+            .in_("id", game_ids)
+            .order("date", desc=True)
+            .execute()
+        )
+        games = games_res.data or []
+
+        result = []
+        for g in games:
+            gid = g.get("id")
+            s_info = signup_map.get(gid, {})
+            result.append({
+                "game": g,
+                "signup_status": s_info.get("status"),
+                "is_paid": s_info.get("is_paid", False)
+            })
+
+        return {"games": result}
+    except Exception as e:
+        logger.error(f"Error fetching my games for user {user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 async def list_players(chat_id: int | None = None, search: str | None = None, user: dict = Depends(get_current_user)):
     db = get_db()
     try:

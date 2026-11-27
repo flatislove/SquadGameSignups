@@ -1,6 +1,14 @@
 import { tg, getStartParam } from './tg.js';
 import { apiFetch } from './api.js';
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 function resolveGameId(urlParams) {
     const fromQuery = (urlParams.get('game_id') || '').trim();
     if (fromQuery) return fromQuery;
@@ -49,22 +57,29 @@ export async function initRouter(options = {}) {
         try {
             const adminChats = await apiFetch('/api/groups/admin-chats');
             if (select) {
-                if (adminChats && adminChats.length > 0) {
-                    select.innerHTML = adminChats.map(c => `<option value="${c.id}">${c.title}</option>`).join('');
-                    
+                if (Array.isArray(adminChats) && adminChats.length > 0) {
+                    select.innerHTML = adminChats
+                        .map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.title)}</option>`)
+                        .join('');
+
                     const savedChatId = localStorage.getItem('activeChatId');
                     if (savedChatId && adminChats.some(c => String(c.id) === String(savedChatId))) {
                         select.value = savedChatId;
-                    } else {
+                    } else if (select.value) {
                         localStorage.setItem('activeChatId', select.value);
                     }
 
                     select.onchange = () => {
-                        localStorage.setItem('activeChatId', select.value);
+                        if (select.value) {
+                            localStorage.setItem('activeChatId', select.value);
+                        } else {
+                            localStorage.removeItem('activeChatId');
+                        }
                         window.dispatchEvent(new CustomEvent('activeChatChanged', { detail: { chatId: select.value } }));
                     };
                 } else {
                     select.innerHTML = '<option value="">Нет групп</option>';
+                    localStorage.removeItem('activeChatId');
                 }
             }
         } catch (e) {

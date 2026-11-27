@@ -1,0 +1,114 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Запись на матч</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 440px; }
+        .section { margin-bottom: 20px; }
+        .form-group { margin-bottom: 12px; text-align: left; }
+        label { display: block; font-size: 13px; color: gray; margin-bottom: 4px; }
+        select, input { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: inherit; }
+        button { background-color: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); border: none; border-radius: 8px; padding: 12px 20px; font-size: 15px; font-weight: bold; width: 100%; cursor: pointer; margin-top: 10px; }
+        .btn-secondary { background-color: #6c757d; }
+        .btn-danger { background-color: #d9534f; }
+        .btn-gold { background-color: #c59b27; color: #fff; }
+        .btn-sm { padding: 6px 10px; font-size: 13px; margin-top: 0; width: auto; }
+        .status-box { margin-top: 15px; padding: 12px; border-radius: 8px; background: rgba(0,0,0,0.04); text-align: center; }
+        .tab-switcher { display: flex; gap: 10px; margin-bottom: 15px; }
+        .tab-btn { flex: 1; padding: 8px; background: var(--tg-theme-secondary-bg-color, #e0e0e0); color: inherit; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        .tab-btn.active { background: var(--tg-theme-button-color, #2481cc); color: #fff; }
+        .game-header { background: rgba(0,123,255,0.08); padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; line-height: 1.4; }
+        .players-list { margin-top: 15px; text-align: left; }
+        .player-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 10px; margin-bottom: 6px; background: var(--tg-theme-secondary-bg-color, #f8f9fa); border-radius: 6px; font-size: 14px; }
+        .player-info { display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; }
+        .player-name-paid { color: #d4a017; font-weight: 700; letter-spacing: 0.2px; text-shadow: 0 0 1px rgba(212, 160, 23, 0.25); }
+        .player-name-unpaid { color: #7a7f87; font-weight: 400; }
+        .actions-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 100; }
+        .modal-content { background: var(--tg-theme-bg-color, #fff); padding: 20px; border-radius: 10px; width: 92%; max-width: 400px; max-height: 88vh; overflow-y: auto; box-sizing: border-box; }
+        .db-players-scroll { max-height: 270px; overflow-y: auto; border: 1px solid rgba(128,128,128,0.25); border-radius: 8px; padding: 6px; margin-top: 8px; }
+        .db-player-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid rgba(128,128,128,0.15); font-size: 13px; }
+        .db-player-row:last-child { border-bottom: none; }
+        .db-player-meta { font-size: 11px; color: gray; margin-top: 2px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="signupSection" class="section active">
+            <h2 style="margin-top:0;">🏐 Запись на матч</h2>
+            <div id="game-details" class="game-header">Загрузка информации...</div>
+            <div id="status-container" class="status-box" style="display: none;">
+                <p id="status-text" style="margin: 0 0 5px 0; font-weight: bold;"></p>
+                <p id="payment-text" style="margin: 0; font-size: 13px; color: gray;"></p>
+            </div>
+
+            <div class="actions-row">
+                <button id="action-btn" style="display: none; flex: 1; margin-top: 0;">Записаться</button>
+                <button id="cancel-btn" class="btn-danger" style="display: none; flex: 1; margin-top: 0;">Отменить</button>
+                <button id="confirm-payment-btn" class="btn-gold" style="flex: 1; margin-top: 0;">💳 Подтвердить оплату</button>
+            </div>
+
+            <div id="admin-panel-container" style="display: none; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
+                <h3>⚙️ Управление</h3>
+                <button id="open-add-player-modal" class="btn-secondary">➕ Добавить игрока</button>
+            </div>
+
+            <div class="players-list">
+                <h3>📜 Состав (<span id="total-count">0</span>/<span id="max-count">0</span>)</h3>
+                <div id="players-container">Загрузка состава...</div>
+            </div>
+        </div>
+
+        <div id="playerModal" class="modal"><div class="modal-content">
+            <h3 id="playerModalTitle" style="margin-top: 0;">Добавить игрока</h3>
+            <div class="tab-switcher" style="margin-bottom: 10px;">
+                <button type="button" id="tab-db-players" class="tab-btn active">Из базы</button>
+                <button type="button" id="tab-new-player" class="tab-btn">Новый игрок</button>
+            </div>
+            <div id="dbPlayersPane">
+                <div class="form-group" style="margin-bottom: 6px;">
+                    <input type="text" id="playerSearchInput" placeholder="🔍 Поиск по имени, @username или TG ID...">
+                </div>
+                <div class="form-group" style="margin-bottom: 6px;">
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" id="dbSelectIsPaid" style="width: auto;">
+                        <span>Сразу отметить как оплатившего</span>
+                    </label>
+                </div>
+                <div id="dbPlayersList" class="db-players-scroll">Загрузка базы игроков...</div>
+                <button type="button" id="close-player-modal-db" class="btn-secondary">Закрыть</button>
+            </div>
+            <div id="newPlayerPane" style="display: none;">
+                <form id="playerForm">
+                    <input type="hidden" id="editPlayerId">
+                    <div class="form-group"><label>Имя *:</label><input type="text" id="modalUserName" placeholder="Например: Алексей К." required></div>
+                    <div class="form-group"><label>Пол *:</label><select id="modalUserGender" required><option value="male">Мужской</option><option value="female">Женский</option></select></div>
+                    <div class="form-group"><label>Telegram ID:</label><input type="number" id="modalTelegramId" placeholder="Например: 123456789"></div>
+                    <div class="form-group"><label>Telegram username:</label><input type="text" id="modalTelegramUsername" placeholder="@username"></div>
+                    <div class="form-group" id="addToMatchOptionGroup"><label style="display: flex; align-items: center; gap: 6px; cursor: pointer;"><input type="checkbox" id="modalAddToMatch" checked style="width: auto;"><span>Сразу добавить в текущий матч</span></label></div>
+                    <div class="form-group" id="modalIsPaidGroup"><label>Оплата в матче:</label><select id="modalIsPaid"><option value="false">Не оплатил</option><option value="true">Оплатил</option></select></div>
+                    <div style="display: flex; gap: 10px;"><button type="submit" id="savePlayerSubmitBtn">Сохранить</button><button type="button" id="close-player-modal" class="btn-secondary">Отмена</button></div>
+                </form>
+            </div>
+        </div></div>
+
+        <div id="receiptModal" class="modal"><div class="modal-content">
+            <h3>Загрузка чека</h3>
+            <p style="font-size: 13px; color: gray; margin-top: 0;">Выберите файл чека (загрузка пока без действий на сервере).</p>
+            <div class="form-group"><label>Файл чека:</label><input type="file" id="receiptFileInput" accept="image/*,.pdf"></div>
+            <div style="display: flex; gap: 10px;"><button type="button" id="submit-receipt-btn">Прикрепить чек</button><button type="button" id="close-receipt-modal" class="btn-secondary">Закрыть</button></div>
+        </div></div>
+    </div>
+
+    <script type="module">
+        import { initSignups } from './js/modules/signups.js';
+        document.addEventListener("DOMContentLoaded", async () => {
+            await initSignups();
+        });
+    </script>
+</body>
+</html>

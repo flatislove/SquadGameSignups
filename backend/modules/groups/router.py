@@ -16,7 +16,6 @@ async def track_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if chat.type in ["group", "supergroup"]:
         db = get_db()
-        # Check if bot is member/administrator
         is_bot = new_member.user.id == context.bot.id
         if is_bot:
             status = new_member.status
@@ -26,10 +25,10 @@ async def track_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             try:
                 db.table("groups").upsert({
-                    "group_id": chat.id,
+                    "chat_id": chat.id,
                     "title": chat.title or "Волейбольная группа",
                     "is_active": is_active
-                }, on_conflict="group_id").execute()
+                }, on_conflict="chat_id").execute()
             except Exception as e:
                 logger.error(f"Failed to upsert group {chat.id} in DB: {e}")
 

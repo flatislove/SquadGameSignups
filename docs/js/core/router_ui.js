@@ -51,6 +51,18 @@ export async function initRouter(options = {}) {
             if (select) {
                 if (adminChats && adminChats.length > 0) {
                     select.innerHTML = adminChats.map(c => `<option value="${c.id}">${c.title}</option>`).join('');
+                    
+                    const savedChatId = localStorage.getItem('activeChatId');
+                    if (savedChatId && adminChats.some(c => String(c.id) === String(savedChatId))) {
+                        select.value = savedChatId;
+                    } else {
+                        localStorage.setItem('activeChatId', select.value);
+                    }
+
+                    select.onchange = () => {
+                        localStorage.setItem('activeChatId', select.value);
+                        window.dispatchEvent(new CustomEvent('activeChatChanged', { detail: { chatId: select.value } }));
+                    };
                 } else {
                     select.innerHTML = '<option value="">Нет групп</option>';
                 }

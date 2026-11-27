@@ -30,17 +30,17 @@ async def get_admin_chats(user: dict = Depends(get_current_user)):
             return []
 
         for group in groups:
-            group_id = group["group_id"]
+            chat_id = group["chat_id"]
             try:
-                member = await telegram_gateway._bot.get_chat_member(chat_id=group_id, user_id=user_id)
-                logger.info(f"User {user_id} status in chat {group_id}: {member.status}")
+                member = await telegram_gateway._bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+                logger.info(f"User {user_id} status in chat {chat_id}: {member.status}")
                 if member.status in ["creator", "administrator"]:
                     admin_chats.append({
-                        "id": group_id,
+                        "id": chat_id,
                         "title": group["title"]
                     })
             except Exception as e:
-                logger.warning(f"Failed to check admin status for user {user_id} in group {group_id}: {e}")
+                logger.warning(f"Failed to check admin status for user {user_id} in group {chat_id}: {e}")
         
         logger.info(f"Returning {len(admin_chats)} admin chats for user_id={user_id}")
         return admin_chats

@@ -33,6 +33,7 @@ class SignupSchema(BaseModel):
 class PlayerCreateOrUpdateSchema(BaseModel):
     name: str
     gender: str
+    chat_id: int | None = None
     telegram_id: int | None = None
     telegram_username: str | None = None
 
@@ -225,10 +226,14 @@ async def _sync_announcement_message(game_id: str) -> None:
 
 
 @router.get("/players")
-async def list_players(search: str | None = None, user: dict = Depends(get_current_user)):
+async def list_players(chat_id: int | None = None, search: str | None = None, user: dict = Depends(get_current_user)):
     db = get_db()
     try:
-        res = await _db(lambda: db.table("players").select("*").order("name", desc=False).execute())
+        query = db.table("players").select("*")
+        if chat_id:
+            query = query.eq("chat_id", chat_id)
+        
+        res = await _db(lambda: query.order("name", desc=False).execute())
         players = res.data or []
         if search and search.strip():
             q = search.strip().lower()
@@ -248,12 +253,19 @@ async def list_players(search: str | None = None, user: dict = Depends(get_curre
 async def create_player(payload: PlayerCreateOrUpdateSchema, user: dict = Depends(get_current_user)):
     db = get_db()
     try:
-        if payload.telegram_id is not None:
-            existing = await _db(lambda: db.table("players").select("id").eq("telegram_id", payload.telegram_id).execute())
+        if payload.telegram_id is not None and payload.chat_id is not None:
+            existing = await _db(
+                lambda: db.table("players")
+                .select("id")
+                .eq("telegram_id", payload.telegram_id)
+                .eq("chat_id", payload.chat_id)
+                .execute()
+            )
             if existing.data:
-                raise HTTPException(status_code=400, detail="Игрок с таким Telegram ID уже существует")
+                raise HTTPException(status_code=400, detail="Игрок с таким Telegram ID уже существует в этом чате")
 
         insert_data = {
+            "chat_id": payload.chat_id,
             "name": payload.name,
             "gender": payload.gender,
             "telegram_id": payload.telegram_id,
@@ -285,23 +297,26 @@ async def update_player(
             if game_res.data and not await _check_game_admin(game_res.data[0], user_id):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin rights required")
 
-        if payload.telegram_id is not None:
+        if payload.telegram_id is not None and payload.chat_id is not None:
             dup = await _db(
                 lambda: db.table("players")
                 .select("id")
                 .eq("telegram_id", payload.telegram_id)
+                .eq("chat_id", payload.chat_id)
                 .neq("id", player_id)
                 .execute()
             )
             if dup.data:
-                raise HTTPException(status_code=400, detail="Другой игрок уже использует этот Telegram ID")
+                raise HTTPException(status_code=400, detail="Другой игрок в этом чате уже использует этот Telegram ID")
 
         update_data = {
+            "chat_id": payload.chat_id,
             "name": payload.name,
             "gender": payload.gender,
             "telegram_id": payload.telegram_id,
             "telegram_username": payload.telegram_username,
         }
+        update_data = {k: v for k, v in update_data.items() if v is not None}
         res = await _db(lambda: db.table("players").update(update_data).eq("id", player_id).execute())
         if not res.data:
             raise HTTPException(status_code=404, detail="Игрок не найден")
@@ -419,7 +434,7 @@ async def signup_user(payload: SignupSchema, user: dict = Depends(get_current_us
     try:
         existing, game_res, main_res = await asyncio.gather(
             _db(lambda: db.table("signups").select("status").eq("game_id", game_id).eq("user_id", user_id).execute()),
-            _db(lambda: db.table("games").select("max_players").eq("id", game_id).execute()),
+            _db(lambda: db.table("games").select("max_players, group_id").eq("id", game_id).execute()),
             _db(lambda: db.table("signups").select("id").eq("game_id", game_id).eq("status", "main").execute()),
         )
 
@@ -428,7 +443,10 @@ async def signup_user(payload: SignupSchema, user: dict = Depends(get_current_us
 
         if not game_res.data:
             raise HTTPException(status_code=404, detail="Game not found")
-        max_players = game_res.data[0].get("max_players") or 0
+        
+        game = game_res.data[0]
+        max_players = game.get("max_players") or 0
+        chat_id = game.get("group_id")
 
         main_count = len(main_res.data) if main_res.data else 0
         signup_status = "main" if main_count < max_players else "reserve"
@@ -440,7 +458,7 @@ async def signup_user(payload: SignupSchema, user: dict = Depends(get_current_us
         if user_id is not None:
             _tg_names_cache[int(user_id)] = tg_name
             try:
-                p_res = await _db(lambda: db.table("players").select("id,name").eq("telegram_id", int(user_id)).execute())
+                p_res = await _db(lambda: db.table("players").select("id,name").eq("telegram_id", int(user_id)).eq("chat_id", chat_id).execute())
                 if p_res.data:
                     player_id = p_res.data[0]["id"]
                     tg_name = p_res.data[0].get("name") or tg_name
@@ -449,6 +467,7 @@ async def signup_user(payload: SignupSchema, user: dict = Depends(get_current_us
                         lambda: db.table("players")
                         .insert(
                             {
+                                "chat_id": chat_id,
                                 "name": tg_name,
                                 "gender": "male",
                                 "telegram_id": int(user_id),
@@ -497,6 +516,7 @@ async def admin_add_signup(payload: AdminAddSignupSchema, user: dict = Depends(g
         if not game_res.data:
             raise HTTPException(status_code=404, detail="Game not found")
         game = game_res.data[0]
+        chat_id = game.get("group_id") or game.get("chat_id")
 
         if not await _check_game_admin(game, user_id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin rights required")
@@ -511,11 +531,12 @@ async def admin_add_signup(payload: AdminAddSignupSchema, user: dict = Depends(g
             validated = PlayerCreateOrUpdateSchema(
                 name=payload.name or "",
                 gender=payload.gender or "",
+                chat_id=chat_id,
                 telegram_id=payload.telegram_id,
                 telegram_username=payload.telegram_username,
             )
             if validated.telegram_id is not None:
-                dup = await _db(lambda: db.table("players").select("*").eq("telegram_id", validated.telegram_id).execute())
+                dup = await _db(lambda: db.table("players").select("*").eq("telegram_id", validated.telegram_id).eq("chat_id", chat_id).execute())
                 if dup.data:
                     player_record = dup.data[0]
             if not player_record:
@@ -523,6 +544,7 @@ async def admin_add_signup(payload: AdminAddSignupSchema, user: dict = Depends(g
                     lambda: db.table("players")
                     .insert(
                         {
+                            "chat_id": chat_id,
                             "name": validated.name,
                             "gender": validated.gender,
                             "telegram_id": validated.telegram_id,

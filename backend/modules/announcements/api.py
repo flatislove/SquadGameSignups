@@ -50,6 +50,8 @@ async def create_game(payload: GameCreateSchema, user: dict = Depends(get_curren
             venue_res = db.table("venues").select("*").eq("id", venue_id).execute()
             if venue_res.data:
                 v = venue_res.data[0]
+                if v.get("chat_id") and int(v.get("chat_id")) != int(payload.chat_id):
+                    raise HTTPException(status_code=400, detail="Выбранная площадка принадлежит другому чату")
                 loc_name = v["name"]
                 loc_link = v["map_url"]
 

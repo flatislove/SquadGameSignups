@@ -7,11 +7,21 @@ export async function initVenues() {
     const openVenueModalBtn = document.getElementById('open-venue-modal');
     const closeVenueModalBtn = document.getElementById('close-venue-modal');
     const venueForm = document.getElementById('venueForm');
+    const chatSelect = document.getElementById('chatSelect');
+
+    function getActiveChatId() {
+        if (chatSelect && chatSelect.value) {
+            return chatSelect.value;
+        }
+        return localStorage.getItem('activeChatId') || '';
+    }
 
     async function loadVenues() {
         if (!venueSelect) return;
+        const chatId = getActiveChatId();
         try {
-            const venues = await apiFetch('/api/venues');
+            const url = chatId ? `/api/venues?chat_id=${encodeURIComponent(chatId)}` : '/api/venues';
+            const venues = await apiFetch(url);
             venueSelect.innerHTML = '<option value="">-- Выберите площадку --</option>';
             venues.forEach(v => {
                 const opt = document.createElement('option');
@@ -28,6 +38,16 @@ export async function initVenues() {
 
     await loadVenues();
 
+    window.addEventListener('activeChatChanged', async () => {
+        await loadVenues();
+    });
+
+    if (chatSelect) {
+        chatSelect.addEventListener('change', async () => {
+            await loadVenues();
+        });
+    }
+
     if (openVenueModalBtn && venueModal) {
         openVenueModalBtn.onclick = () => { venueModal.style.display = 'flex'; };
     }
@@ -40,11 +60,17 @@ export async function initVenues() {
             e.preventDefault();
             const name = document.getElementById('venueName').value;
             const mapUrl = document.getElementById('venueMapUrl').value;
+            const chatId = getActiveChatId();
+
+            if (!chatId) {
+                tg.showAlert('⚠️ Сначала выберите группу!');
+                return;
+            }
 
             try {
                 const res = await apiFetch('/api/venues', {
                     method: 'POST',
-                    body: JSON.stringify({ name, map_url: mapUrl })
+                    body: JSON.stringify({ chat_id: parseInt(chatId, 10), name, map_url: mapUrl })
                 });
                 if (res.success) {
                     tg.showAlert("✅ Площадка успешно добавлена!");
@@ -61,3 +87,4 @@ export async function initVenues() {
         };
     }
 }
+

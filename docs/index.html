@@ -249,17 +249,15 @@
                 return;
             }
 
-            if (viewParam === 'create') {
-                setActiveView('create');
-                await initVenues();
-                await initRouter();
-                initAnnouncements();
+            if (viewParam === 'signup') {
+                setActiveView('signup');
+                await initSignups();
                 return;
             }
 
             setActiveView('create');
-            await initVenues();
             await initRouter();
+            await initVenues();
             initAnnouncements();
         });
     </script>

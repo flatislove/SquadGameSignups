@@ -1,10 +1,13 @@
 from datetime import datetime
 from html import escape
 import logging
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from urllib.parse import quote
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.error import TelegramError
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_WEBAPP_BASE_URL = "https://flatislove.github.io/SquadGameSignups"
 
 _RU_WEEKDAYS = {
     0: "Понедельник",
@@ -95,18 +98,13 @@ def build_announcement_text(
     return "\n".join(lines)
 
 
-def _build_signup_button(signup_url: str) -> InlineKeyboardButton:
-    try:
-        return InlineKeyboardButton(
-            text="Запись",
-            url=signup_url,
-            api_kwargs={"style": "success"},
-        )
-    except TypeError:
-        return InlineKeyboardButton(
-            text="Запись",
-            url=signup_url,
-        )
+def build_signup_page_url(
+    game_id: str,
+    base_url: str = DEFAULT_WEBAPP_BASE_URL,
+) -> str:
+    clean_base = str(base_url or DEFAULT_WEBAPP_BASE_URL).strip().rstrip("/")
+    clean_game_id = quote(str(game_id or "").strip(), safe="")
+    return f"{clean_base}/signup.html?game_id={clean_game_id}"
 
 
 def build_signup_deep_link(game_id: str, bot_username: str) -> str:
@@ -115,23 +113,43 @@ def build_signup_deep_link(game_id: str, bot_username: str) -> str:
     return f"https://t.me/{clean_username}?startapp=game_{clean_game_id}"
 
 
+def _build_signup_button(signup_url: str, use_web_app: bool = False) -> InlineKeyboardButton:
+    button_kwargs = {"text": "Запись"}
+    if use_web_app:
+        button_kwargs["web_app"] = WebAppInfo(url=signup_url)
+    else:
+        button_kwargs["url"] = signup_url
+
+    try:
+        return InlineKeyboardButton(**button_kwargs, api_kwargs={"style": "success"})
+    except TypeError:
+        return InlineKeyboardButton(**button_kwargs)
+
+
 class TelegramGateway:
-    def __init__(self):
+    def __init__(self, webapp_base_url: str = DEFAULT_WEBAPP_BASE_URL, use_web_app: bool = False):
         self._bot = None
+        self._webapp_base_url = webapp_base_url
+        self._use_web_app = use_web_app
 
     def set_bot(self, bot):
         self._bot = bot
 
-    def build_markup(self, game_id: str, bot_username: str) -> InlineKeyboardMarkup:
-        signup_url = build_signup_deep_link(game_id=game_id, bot_username=bot_username)
-        return InlineKeyboardMarkup([[_build_signup_button(signup_url)]])
+    def build_markup(self, game_id: str, bot_username: str | None = None) -> InlineKeyboardMarkup:
+        signup_url = build_signup_page_url(
+            game_id=game_id,
+            base_url=self._webapp_base_url,
+        )
+        return InlineKeyboardMarkup(
+            [[_build_signup_button(signup_url, use_web_app=self._use_web_app)]]
+        )
 
     async def send_game_announcement(
         self,
         chat_id: int,
         game_id: str,
         game_data: dict,
-        bot_username: str,
+        bot_username: str = "",
         main_count: int = 0,
         reserve_count: int = 0,
     ):
@@ -172,9 +190,9 @@ class TelegramGateway:
         message_id: int,
         game_id: str,
         game_data: dict,
-        bot_username: str,
-        main_count: int,
-        reserve_count: int,
+        bot_username: str = "",
+        main_count: int = 0,
+        reserve_count: int = 0,
     ) -> bool:
         if not self._bot or not chat_id or not message_id:
             return False

@@ -9,6 +9,7 @@
 </head>
 <body>
     <div class="container">
+        <!-- Раздел записи / игры -->
         <div id="signupSection" class="section">
             <div id="game-details" class="game-header">Загрузка информации...</div>
             <div id="status-container" class="status-box" style="display: none;">
@@ -17,14 +18,14 @@
             </div>
 
             <div class="actions-row">
-                <button id="action-btn" style="display: none; flex: 1; margin-top: 0;">Записаться</button>
-                <button id="cancel-btn" class="btn-danger" style="display: none; flex: 1; margin-top: 0;">Отменить</button>
-                <button id="confirm-payment-btn" class="btn-gold" style="flex: 1; margin-top: 0;">💳 Подтвердить оплату</button>
+                <button type="button" id="action-btn" style="display: none; flex: 1; margin-top: 0;">Записаться</button>
+                <button type="button" id="cancel-btn" class="btn-danger" style="display: none; flex: 1; margin-top: 0;">Отменить</button>
+                <button type="button" id="confirm-payment-btn" class="btn-gold" style="flex: 1; margin-top: 0;">💳 Подтвердить оплату</button>
             </div>
 
             <div id="admin-panel-container" style="display: none; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
                 <h3>⚙️ Управление</h3>
-                <button id="open-add-player-modal" class="btn-secondary">➕ Добавить игрока</button>
+                <button type="button" id="open-add-player-modal" class="btn-secondary">➕ Добавить игрока</button>
             </div>
 
             <div class="players-list">
@@ -33,107 +34,62 @@
             </div>
         </div>
 
+        <!-- Раздел создания анонса -->
         <div id="createSection" class="section">
             <h2>🏐 Создать анонс</h2>
             <form id="gameForm">
-                <div class="form-group"><label>Группа:</label><select id="chatSelect" required></select></div>
-                <div class="form-group"><label>Дата:</label><input type="date" id="gameDate" required></div>
-                <div class="form-group"><label>Начало:</label><input type="time" id="startTime" required></div>
-                <div class="form-group"><label>Конец:</label><input type="time" id="endTime" required></div>
-                <div class="form-group"><label>Публикация:</label><select id="publishTime"><option value="now">Сразу в группу</option><option value="draft">Только сохранить</option></select></div>
                 <div class="form-group">
-                    <label id="venueLabel">Площадка:</label>
+                    <label for="chatSelect">Группа:</label>
+                    <select id="chatSelect" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="gameDate">Дата:</label>
+                    <input type="date" id="gameDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="startTime">Начало:</label>
+                    <input type="time" id="startTime" required>
+                </div>
+                <div class="form-group">
+                    <label for="endTime">Конец:</label>
+                    <input type="time" id="endTime" required>
+                </div>
+                <div class="form-group">
+                    <label for="publishTime">Публикация:</label>
+                    <select id="publishTime">
+                        <option value="now">Сразу в группу</option>
+                        <option value="draft">Только сохранить</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label id="venueLabel" for="venueSelect">Площадка:</label>
                     <div style="display: flex; gap: 8px;">
                         <select id="venueSelect" style="flex: 3;" required disabled></select>
                         <button type="button" id="open-venue-modal" class="btn-secondary btn-sm" style="flex: 1; margin-top: 0;" disabled title="Сначала выберите группу">➕</button>
                     </div>
                     <small id="venueHelperText" style="display: block; color: #e68a1e; font-size: 11px; margin-top: 3px;">⚠️ Сначала выберите группу</small>
                 </div>
-                <div class="form-group"><label>Стоимость:</label><input type="text" id="cost" value="2500 kzt" required></div>
-                <div class="form-group"><label>Лимит игроков:</label><input type="number" id="maxPlayers" value="18" required></div>
-                <div class="form-group"><label>Организатор:</label><input type="text" id="orgName" required></div>
-        <div id="playerModal" class="modal"><div class="modal-content">
-            <h3 id="playerModalTitle" style="margin-top: 0;">Добавить игрока</h3>
-            <div class="tab-switcher" style="margin-bottom: 10px;">
-                <button type="button" id="tab-db-players" class="tab-btn active">Из базы</button>
-                <button type="button" id="tab-new-player" class="tab-btn">Новый игрок</button>
-            </div>
-            <div id="dbPlayersPane">
-                <div class="form-group" style="margin-bottom: 6px;">
-                    <input type="text" id="playerSearchInput" placeholder="🔍 Поиск по имени, @username или TG ID...">
+                <div class="form-group">
+                    <label for="cost">Стоимость:</label>
+                    <input type="text" id="cost" value="2500 kzt" required>
                 </div>
-                <div class="form-group" style="margin-bottom: 6px;">
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                        <input type="checkbox" id="dbSelectIsPaid" style="width: auto;">
-                        <span>Сразу отметить как оплатившего</span>
-                    </label>
+                <div class="form-group">
+                    <label for="maxPlayers">Лимит игроков:</label>
+                    <input type="number" id="maxPlayers" value="18" required>
                 </div>
-                <div id="dbPlayersList" class="db-players-scroll">Загрузка базы игроков...</div>
-                <button type="button" id="close-player-modal-db" class="btn-secondary">Закрыть</button>
-            </div>
-            <div id="newPlayerPane" style="display: none;">
-                <form id="playerForm">
-                    <input type="hidden" id="editPlayerId">
-                    <div class="form-group">
-                        <label>Имя *:</label>
-                        <input type="text" id="modalUserName" placeholder="Например: Алексей К." required>
-                    </div>
-                    <div class="form-group">
-                        <label>Пол *:</label>
-                        <select id="modalUserGender" required>
-                            <option value="male">Мужской</option>
-                            <option value="female">Женский</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Telegram ID:</label>
-                        <input type="number" id="modalTelegramId" placeholder="Например: 123456789">
-                    </div>
-                    <div class="form-group">
-                        <label>Telegram username:</label>
-                        <input type="text" id="modalTelegramUsername" placeholder="@username">
-                    </div>
-                    <div class="form-group" id="addToMatchOptionGroup">
-                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                            <input type="checkbox" id="modalAddToMatch" checked style="width: auto;">
-                            <span>Сразу добавить в текущий матч</span>
-                        </label>
-                    </div>
-                    <div class="form-group" id="modalIsPaidGroup">
-                        <label>Оплата в матче:</label>
-                        <select id="modalIsPaid">
-                            <option value="false">Не оплатил</option>
-                            <option value="true">Оплатил</option>
-                        </select>
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <button type="submit" id="savePlayerSubmitBtn">Сохранить</button>
-                        <button type="button" id="close-player-modal" class="btn-secondary">Отмена</button>
-                    </div>
-                </form>
-            </div>
-        </div></div>
+                <div class="form-group">
+                    <label for="orgName">Организатор:</label>
+                    <input type="text" id="orgName" required>
+                </div>
+                <div class="form-group">
+                    <label for="orgPhone">Телефон:</label>
+                    <input type="tel" id="orgPhone" required>
+                </div>
+                <button type="submit">Создать анонс</button>
+            </form>
+        </div>
 
-        <div id="receiptModal" class="modal"><div class="modal-content">
-            <h3>Загрузка чека</h3>
-            <p style="font-size: 13px; color: gray; margin-top: 0;">Выберите файл чека (загрузка пока без действий на сервере).</p>
-            <div class="form-group">
-                <label>Файл чека:</label>
-                <input type="file" id="receiptFileInput" accept="image/*,.pdf">
-            </div>
-            <div style="display: flex; gap: 10px;">
-                <button type="button" id="submit-receipt-btn">Прикрепить чек</button>
-                <button type="button" id="close-receipt-modal" class="btn-secondary">Закрыть</button>
-            </div>
-        </div></div>
-
-        <div id="venueModal" class="modal"><div class="modal-content">
-            <h3>Новая площадка</h3>
-            <form id="venueForm">
-                <div class="form-group"><label>Название:</label><input type="text" id="venueName" required></div>
-                <div class="form-group"><label>Карта (URL):</label><input type="url" id="venueMapUrl" required></div>
-                <div style="display: flex; gap: 10px;"><button type="submit">Добавить</button><button type="button" id="close-venue-modal" class="btn-secondary">Отмена</button></div>
-        <!-- ---------- Match mode section ---------- -->
+        <!-- Раздел матча -->
         <div id="matchSection" class="section">
             <div class="match-header">
                 <button type="button" id="matchBackBtn" class="btn-secondary btn-sm" style="width: auto;">← Назад</button>
@@ -172,39 +128,147 @@
                 <button type="button" id="btnFinishMatch" style="width: auto; margin-top: 8px;">Завершить матч</button>
             </div>
         </div>
+    </div>
 
-        <!-- Team change modal -->
-        <div id="teamChangeModal" class="modal"><div class="modal-content">
+    <!-- Модалка добавления игрока -->
+    <div id="playerModal" class="modal">
+        <div class="modal-content">
+            <h3 id="playerModalTitle" style="margin-top: 0;">Добавить игрока</h3>
+            <div class="tab-switcher" style="margin-bottom: 10px;">
+                <button type="button" id="tab-db-players" class="tab-btn active">Из базы</button>
+                <button type="button" id="tab-new-player" class="tab-btn">Новый игрок</button>
+            </div>
+            <div id="dbPlayersPane">
+                <div class="form-group" style="margin-bottom: 6px;">
+                    <input type="text" id="playerSearchInput" placeholder="🔍 Поиск по имени, @username или TG ID...">
+                </div>
+                <div class="form-group" style="margin-bottom: 6px;">
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" id="dbSelectIsPaid" style="width: auto;">
+                        <span>Сразу отметить как оплатившего</span>
+                    </label>
+                </div>
+                <div id="dbPlayersList" class="db-players-scroll">Загрузка базы игроков...</div>
+                <button type="button" id="close-player-modal-db" class="btn-secondary">Закрыть</button>
+            </div>
+            <div id="newPlayerPane" style="display: none;">
+                <form id="playerForm">
+                    <input type="hidden" id="editPlayerId">
+                    <div class="form-group">
+                        <label for="modalUserName">Имя *:</label>
+                        <input type="text" id="modalUserName" placeholder="Например: Алексей К." required>
+                    </div>
+                    <div class="form-group">
+                        <label for="modalUserGender">Пол *:</label>
+                        <select id="modalUserGender" required>
+                            <option value="male">Мужской</option>
+                            <option value="female">Женский</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="modalTelegramId">Telegram ID:</label>
+                        <input type="number" id="modalTelegramId" placeholder="Например: 123456789">
+                    </div>
+                    <div class="form-group">
+                        <label for="modalTelegramUsername">Telegram username:</label>
+                        <input type="text" id="modalTelegramUsername" placeholder="@username">
+                    </div>
+                    <div class="form-group" id="addToMatchOptionGroup">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" id="modalAddToMatch" checked style="width: auto;">
+                            <span>Сразу добавить в текущий матч</span>
+                        </label>
+                    </div>
+                    <div class="form-group" id="modalIsPaidGroup">
+                        <label for="modalIsPaid">Оплата в матче:</label>
+                        <select id="modalIsPaid">
+                            <option value="false">Не оплатил</option>
+                            <option value="true">Оплатил</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="submit" id="savePlayerSubmitBtn">Сохранить</button>
+                        <button type="button" id="close-player-modal" class="btn-secondary">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модалка чека -->
+    <div id="receiptModal" class="modal">
+        <div class="modal-content">
+            <h3>Загрузка чека</h3>
+            <p style="font-size: 13px; color: gray; margin-top: 0;">Выберите файл чека (загрузка пока без действий на сервере).</p>
+            <div class="form-group">
+                <label for="receiptFileInput">Файл чека:</label>
+                <input type="file" id="receiptFileInput" accept="image/*,.pdf">
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button type="button" id="submit-receipt-btn">Прикрепить чек</button>
+                <button type="button" id="close-receipt-modal" class="btn-secondary">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модалка новой площадки -->
+    <div id="venueModal" class="modal">
+        <div class="modal-content">
+            <h3>Новая площадка</h3>
+            <form id="venueForm">
+                <div class="form-group">
+                    <label for="venueName">Название:</label>
+                    <input type="text" id="venueName" required>
+                </div>
+                <div class="form-group">
+                    <label for="venueMapUrl">Карта (URL):</label>
+                    <input type="url" id="venueMapUrl" required>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit">Добавить</button>
+                    <button type="button" id="close-venue-modal" class="btn-secondary">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модалка смены команды -->
+    <div id="teamChangeModal" class="modal">
+        <div class="modal-content">
             <h3 style="margin-top: 0;">Выбор команды</h3>
             <div class="form-group">
-                <label>Команда:</label>
+                <label for="teamChangeSelect">Команда:</label>
                 <select id="teamChangeSelect"></select>
             </div>
             <div class="modal-actions">
                 <button type="button" id="teamChangeConfirm">Применить</button>
                 <button type="button" id="teamChangeCancel" class="btn-secondary">Отмена</button>
             </div>
-        </div></div>
+        </div>
+    </div>
 
-        <!-- Replace player modal -->
-        <div id="replacePlayerModal" class="modal"><div class="modal-content">
+    <!-- Модалка замены игрока -->
+    <div id="replacePlayerModal" class="modal">
+        <div class="modal-content">
             <h3 style="margin-top: 0;">Замена игрока</h3>
             <div class="form-group">
-                <label>Кто уходит:</label>
+                <label for="replaceOutSelect">Кто уходит:</label>
                 <select id="replaceOutSelect"></select>
             </div>
             <div class="form-group">
-                <label>Кто заходит:</label>
+                <label for="replaceInSelect">Кто заходит:</label>
                 <select id="replaceInSelect"></select>
             </div>
             <div class="modal-actions">
                 <button type="button" id="replacePlayerConfirm">Заменить</button>
                 <button type="button" id="replacePlayerCancel" class="btn-secondary">Отмена</button>
             </div>
-        </div></div>
+        </div>
+    </div>
 
-        <!-- Action selection modal -->
-        <div id="actionModal" class="modal"><div class="modal-content">
+    <!-- Модалка выбора действия -->
+    <div id="actionModal" class="modal">
+        <div class="modal-content">
             <h3 style="margin-top: 0;">Действие игрока</h3>
             <div class="form-group">
                 <label>Игрок:</label>
@@ -214,21 +278,31 @@
             <div class="modal-actions">
                 <button type="button" id="actionCancel" class="btn-secondary">Отмена</button>
             </div>
-        </div></div>
+        </div>
+    </div>
 
-        <!-- Finish match modal -->
-        <div id="finishMatchModal" class="modal"><div class="modal-content">
+    <!-- Модалка завершения матча -->
+    <div id="finishMatchModal" class="modal">
+        <div class="modal-content">
             <h3 style="margin-top: 0;">Завершить матч</h3>
             <div class="finish-modal-row">
                 <input type="number" id="finishScoreLeft" placeholder="Счёт слева" min="0">
                 <input type="number" id="finishScoreRight" placeholder="Счёт справа" min="0">
             </div>
             <div class="form-group">
-                <label>Статус:</label>
+                <label for="finishStatus">Статус:</label>
                 <select id="finishStatus">
                     <option value="finished">Завершён</option>
                     <option value="pending">Перенести</option>
                 </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="finishConfirm">Завершить</button>
+                <button type="button" id="finishCancel" class="btn-secondary">Отмена</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         import { initRouter } from './js/core/router_ui.js';
         import { initSignups } from './js/modules/signups.js';
@@ -237,22 +311,42 @@
         import { initMatchView } from './js/match/match-view.js';
         import { initMatchControls } from './js/match/match-controls.js';
 
+        function parseGameParam(rawValue) {
+            if (!rawValue || typeof rawValue !== 'string') return null;
+            const trimmed = rawValue.trim();
+            if (!trimmed) return null;
+            if (trimmed.startsWith('game_')) {
+                return trimmed.slice('game_'.length).trim() || null;
+            }
+            return trimmed;
+        }
+
         function resolveInitialGameId() {
             const params = new URLSearchParams(window.location.search);
-            const fromQuery = (params.get('game_id') || '').trim();
+            const fromQuery = parseGameParam(params.get('game_id') || params.get('gameId') || params.get('startapp'));
             if (fromQuery) {
                 window.CURRENT_GAME_ID = fromQuery;
                 return fromQuery;
             }
 
-            const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
-            if (typeof startParam === 'string' && startParam.startsWith('game_')) {
-                const fromStart = startParam.slice('game_'.length).trim();
-                if (fromStart) {
-                    window.CURRENT_GAME_ID = fromStart;
-                    return fromStart;
-                }
+            const hashQuery = window.location.hash.startsWith('#')
+                ? new URLSearchParams(window.location.hash.slice(1))
+                : null;
+            const fromHash = parseGameParam(
+                hashQuery?.get('game_id') || hashQuery?.get('gameId') || hashQuery?.get('tgWebAppStartParam')
+            );
+            if (fromHash) {
+                window.CURRENT_GAME_ID = fromHash;
+                return fromHash;
             }
+
+            const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+            const fromStart = parseGameParam(startParam);
+            if (fromStart) {
+                window.CURRENT_GAME_ID = fromStart;
+                return fromStart;
+            }
+
             return null;
         }
 
@@ -265,7 +359,7 @@
             if (matchEl) matchEl.classList.toggle('active', viewName === 'match');
         }
 
-        document.addEventListener('DOMContentLoaded', async () => {
+        async function bootApp() {
             window.Telegram?.WebApp?.ready?.();
             window.Telegram?.WebApp?.expand?.();
 
@@ -279,33 +373,23 @@
                 return;
             }
 
-            if (viewParam === 'signup') {
-                setActiveView('signup');
-                await initSignups();
+            if (viewParam === 'create') {
+                setActiveView('create');
+                await initRouter();
+                await initVenues();
+                initAnnouncements();
                 return;
             }
 
-            setActiveView('create');
-            await initRouter();
-            await initVenues();
-            initAnnouncements();
-        });
+            setActiveView('signup');
+            await initSignups();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bootApp);
+        } else {
+            bootApp();
+        }
     </script>
 </body>
 </html>
-
-            </div>
-            <div class="modal-actions">
-                <button type="button" id="finishConfirm">Завершить</button>
-                <button type="button" id="finishCancel" class="btn-secondary">Отмена</button>
-            </div>
-        </div></div>
-    </div>
-
-            </form>
-        </div></div>
-
-                <div class="form-group"><label>Телефон:</label><input type="tel" id="orgPhone" required></div>
-                <button type="submit">Создать анонс</button>
-            </form>
-        </div>

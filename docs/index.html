@@ -5,91 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Управление волейболом</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--tg-theme-bg-color, #fff);
-            color: var(--tg-theme-text-color, #000);
-            margin: 0;
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .container { width: 100%; max-width: 440px; }
-        .section { display: none; margin-bottom: 20px; }
-        .section.active { display: block; }
-        .form-group { margin-bottom: 12px; text-align: left; }
-        label { display: block; font-size: 13px; color: gray; margin-bottom: 4px; }
-        select, input {
-            width: 100%;
-            padding: 10px;
-            box-sizing: border-box;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            font-size: 15px;
-            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
-            color: inherit;
-        }
-        button {
-            background-color: var(--tg-theme-button-color, #2481cc);
-            color: var(--tg-theme-button-text-color, #fff);
-            border: none;
-            border-radius: 8px;
-            padding: 12px 20px;
-            font-size: 15px;
-            font-weight: bold;
-            width: 100%;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-        .btn-secondary { background-color: #6c757d; }
-        .btn-danger { background-color: #d9534f; }
-        .btn-gold { background-color: #c59b27; color: #fff; }
-        .btn-sm { padding: 6px 10px; font-size: 13px; margin-top: 0; width: auto; }
-        .status-box { margin-top: 15px; padding: 12px; border-radius: 8px; background: rgba(0,0,0,0.04); text-align: center; }
-        .tab-switcher { display: flex; gap: 10px; margin-bottom: 10px; }
-        .tab-btn { flex: 1; padding: 8px; background: var(--tg-theme-secondary-bg-color, #e0e0e0); color: inherit; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
-        .tab-btn.active { background: var(--tg-theme-button-color, #2481cc); color: #fff; }
-        .game-header { background: rgba(0,123,255,0.08); padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; line-height: 1.4; }
-        .players-list { margin-top: 15px; text-align: left; }
-        .player-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 10px; margin-bottom: 6px; background: var(--tg-theme-secondary-bg-color, #f8f9fa); border-radius: 6px; font-size: 14px; }
-        .player-info { display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; }
-        .player-name-paid { color: #d4a017; font-weight: 700; letter-spacing: 0.2px; text-shadow: 0 0 1px rgba(212, 160, 23, 0.25); }
-        .player-name-unpaid { color: #7a7f87; font-weight: 400; }
-        .actions-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 100; }
-        .modal-content { background: var(--tg-theme-bg-color, #fff); padding: 20px; border-radius: 10px; width: 92%; max-width: 400px; max-height: 88vh; overflow-y: auto; box-sizing: border-box; }
-        .db-players-scroll { max-height: 270px; overflow-y: auto; border: 1px solid rgba(128,128,128,0.25); border-radius: 8px; padding: 6px; margin-top: 8px; }
-        .db-player-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid rgba(128,128,128,0.15); font-size: 13px; }
-        .db-player-row:last-child { border-bottom: none; }
-        .db-player-meta { font-size: 11px; color: gray; margin-top: 2px; }
-
-        /* ---------- Match mode styles ---------- */
-        .match-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(128,128,128,0.16); }
-        .match-game-title { font-size: 16px; font-weight: bold; }
-        .match-score-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
-        .match-team { display: flex; align-items: center; gap: 8px; flex: 1; }
-        .btn-team-icon { width: 34px; height: 34px; border-radius: 50%; background: var(--tg-theme-secondary-bg-color, #e0e0e0); color: inherit; border: 1px solid rgba(128,128,128,0.16); font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
-        .btn-team-name { flex: 1; min-width: 0; text-align: left; padding: 8px 10px; border-radius: 8px; background: var(--tg-theme-secondary-bg-color, #f0f0f0); color: inherit; border: 1px solid rgba(128,128,128,0.16); font-weight: 600; font-size: 15px; cursor: pointer; white-space: normal; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
-        .match-score { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-        .match-score-digit { font-size: 34px; font-weight: 800; min-width: 44px; text-align: center; }
-        .match-score-digit.swipe-anim { animation: swipeAnim 0.3s ease; }
-        @keyframes swipeAnim { 0% { transform: scale(1); } 50% { transform: scale(1.25); } 100% { transform: scale(1); } }
-        .match-players-row { display: flex; gap: 10px; margin-bottom: 10px; }
-        .match-players-col { flex: 1; display: flex; flex-direction: column; gap: 6px; }
-        .match-players-col h4 { margin: 0 0 4px 0; font-size: 13px; color: gray; font-weight: 600; }
-        .match-player-btn { width: 100%; padding: 8px 10px; border-radius: 8px; background: var(--tg-theme-secondary-bg-color, #e8e8e8); color: inherit; border: 1px solid rgba(128,128,128,0.16); text-align: left; font-size: 14px; cursor: pointer; }
-        .match-player-btn:active { opacity: 0.85; background: #d0d0d0; }
-        .match-log { border-top: 1px solid rgba(128,128,128,0.16); padding-top: 8px; margin-top: 8px; }
-        .match-log-item { padding: 8px 10px; border-radius: 8px; background: var(--tg-theme-secondary-bg-color, #f0f0f0); margin-bottom: 6px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
-        .match-log-weight { font-weight: bold; color: #2481cc; }
-        .match-empty { color: gray; font-size: 13px; text-align: center; padding: 20px; }
-        .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
-        .modal-actions button { flex: 1; }
-        .finish-modal-row { display: flex; gap: 10px; margin-bottom: 12px; }
-        .finish-modal-row input { flex: 1; }
-    </style>
+    <link rel="stylesheet" href="css/match-and-menu.css">
 </head>
 <body>
     <div class="container">
@@ -125,30 +41,23 @@
                 <div class="form-group"><label>Начало:</label><input type="time" id="startTime" required></div>
                 <div class="form-group"><label>Конец:</label><input type="time" id="endTime" required></div>
                 <div class="form-group"><label>Публикация:</label><select id="publishTime"><option value="now">Сразу в группу</option><option value="draft">Только сохранить</option></select></div>
-    <div class="form-group">
-        <label id="venueLabel">Площадка:</label>
-        <div style="display: flex; gap: 8px;">
-            <select id="venueSelect" style="flex: 3;" required disabled></select>
-            <button type="button" id="open-venue-modal" class="btn-secondary btn-sm" style="flex: 1; margin-top: 0;" disabled title="Сначала выберите группу">➕</button>
-        </div>
-        <small id="venueHelperText" style="display: block; color: #e68a1e; font-size: 11px; margin-top: 3px;">⚠️ Сначала выберите группу</small>
-    </div>
+                <div class="form-group">
+                    <label id="venueLabel">Площадка:</label>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="venueSelect" style="flex: 3;" required disabled></select>
+                        <button type="button" id="open-venue-modal" class="btn-secondary btn-sm" style="flex: 1; margin-top: 0;" disabled title="Сначала выберите группу">➕</button>
+                    </div>
+                    <small id="venueHelperText" style="display: block; color: #e68a1e; font-size: 11px; margin-top: 3px;">⚠️ Сначала выберите группу</small>
+                </div>
                 <div class="form-group"><label>Стоимость:</label><input type="text" id="cost" value="2500 kzt" required></div>
                 <div class="form-group"><label>Лимит игроков:</label><input type="number" id="maxPlayers" value="18" required></div>
                 <div class="form-group"><label>Организатор:</label><input type="text" id="orgName" required></div>
-                <div class="form-group"><label>Телефон:</label><input type="tel" id="orgPhone" required></div>
-                <button type="submit">Создать анонс</button>
-            </form>
-        </div>
-
         <div id="playerModal" class="modal"><div class="modal-content">
             <h3 id="playerModalTitle" style="margin-top: 0;">Добавить игрока</h3>
-
             <div class="tab-switcher" style="margin-bottom: 10px;">
                 <button type="button" id="tab-db-players" class="tab-btn active">Из базы</button>
                 <button type="button" id="tab-new-player" class="tab-btn">Новый игрок</button>
             </div>
-
             <div id="dbPlayersPane">
                 <div class="form-group" style="margin-bottom: 6px;">
                     <input type="text" id="playerSearchInput" placeholder="🔍 Поиск по имени, @username или TG ID...">
@@ -162,7 +71,6 @@
                 <div id="dbPlayersList" class="db-players-scroll">Загрузка базы игроков...</div>
                 <button type="button" id="close-player-modal-db" class="btn-secondary">Закрыть</button>
             </div>
-
             <div id="newPlayerPane" style="display: none;">
                 <form id="playerForm">
                     <input type="hidden" id="editPlayerId">
@@ -225,9 +133,6 @@
                 <div class="form-group"><label>Название:</label><input type="text" id="venueName" required></div>
                 <div class="form-group"><label>Карта (URL):</label><input type="url" id="venueMapUrl" required></div>
                 <div style="display: flex; gap: 10px;"><button type="submit">Добавить</button><button type="button" id="close-venue-modal" class="btn-secondary">Отмена</button></div>
-            </form>
-        </div></div>
-
         <!-- ---------- Match mode section ---------- -->
         <div id="matchSection" class="section">
             <div class="match-header">
@@ -237,7 +142,7 @@
 
             <div class="match-score-row">
                 <div class="match-team match-team-left">
-                    <button type="button" id="btnSwapTeamLeft" class="btn-team-icon" title="Сменить команду">⇄</button>
+                    <button type="button" id="btnSwapTeamLeft" class="btn-team-icon" title="Замена игрока">⇄</button>
                     <button type="button" id="btnTeamNameLeft" class="btn-team-name">Команда слева</button>
                 </div>
                 <div class="match-score">
@@ -246,7 +151,7 @@
                 </div>
                 <div class="match-team match-team-right">
                     <button type="button" id="btnTeamNameRight" class="btn-team-name">Команда справа</button>
-                    <button type="button" id="btnSwapTeamRight" class="btn-team-icon" title="Сменить команду">⇄</button>
+                    <button type="button" id="btnSwapTeamRight" class="btn-team-icon" title="Замена игрока">⇄</button>
                 </div>
             </div>
 
@@ -324,20 +229,13 @@
                     <option value="finished">Завершён</option>
                     <option value="pending">Перенести</option>
                 </select>
-            </div>
-            <div class="modal-actions">
-                <button type="button" id="finishConfirm">Завершить</button>
-                <button type="button" id="finishCancel" class="btn-secondary">Отмена</button>
-            </div>
-        </div></div>
-    </div>
-
     <script type="module">
-        import { apiFetch } from './js/core/api.js';
         import { initRouter } from './js/core/router_ui.js';
         import { initSignups } from './js/modules/signups.js';
         import { initAnnouncements } from './js/modules/announcements.js';
         import { initVenues } from './js/modules/venues.js';
+        import { initMatchView } from './js/match/match-view.js';
+        import { initMatchControls } from './js/match/match-controls.js';
 
         function resolveInitialGameId() {
             const params = new URLSearchParams(window.location.search);
@@ -368,349 +266,6 @@
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
-
-        // ============ MATCH MODE STATE ============
-        let matchState = {
-            gameId: null,
-            matchId: null,
-            chatId: null,
-            teams: [],
-            lineups: [],
-            actions: [],
-            signups: [],
-            scoreLeft: 0,
-            scoreRight: 0,
-            status: 'live',
-        };
-
-        function openModal(id) { document.getElementById(id).style.display = 'flex'; }
-        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-        document.querySelectorAll('.modal .btn-secondary').forEach(btn => {
-            btn.addEventListener('click', () => { btn.closest('.modal').style.display = 'none'; });
-        });
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-        });
-
-        async function initMatchMode(gameId) {
-            matchState.gameId = gameId;
-            document.getElementById('matchGameTitle').textContent = 'Загрузка...';
-
-            try {
-                const [stateRes, statusRes] = await Promise.all([
-                    apiFetch(`/api/match/${encodeURIComponent(gameId)}/state`),
-                    apiFetch(`/api/signups/status?game_id=${encodeURIComponent(gameId)}`)
-                ]);
-
-                matchState.teams = Array.isArray(stateRes?.teams) ? stateRes.teams : [];
-                matchState.lineups = Array.isArray(stateRes?.lineups) ? stateRes.lineups : [];
-                matchState.actions = Array.isArray(stateRes?.actions) ? stateRes.actions : [];
-                matchState.signups = Array.isArray(statusRes?.signups) ? statusRes.signups : [];
-                matchState.chatId = (statusRes.game || {}).group_id || (statusRes.game || {}).chatId || (statusRes.game || {}).chat_id;
-
-                const matches = Array.isArray(stateRes?.matches) ? stateRes.matches : [];
-                const liveMatch = matches.find(m => m.status === 'live');
-                if (liveMatch) {
-                    matchState.matchId = liveMatch.id;
-                    matchState.scoreLeft = liveMatch.left_score || 0;
-                    matchState.scoreRight = liveMatch.right_score || 0;
-                    matchState.status = liveMatch.status || 'live';
-                } else {
-                    const leftTeam = matchState.teams[0] || {};
-                    const rightTeam = matchState.teams[1] || {};
-                    const createRes = await apiFetch('/api/match/matches', {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            game_id: gameId,
-                            left_team_id: leftTeam.id || '',
-                            right_team_id: rightTeam.id || ''
-                        })
-                    });
-                    matchState.matchId = createRes.match?.id || null;
-                    matchState.scoreLeft = 0;
-                    matchState.scoreRight = 0;
-                    matchState.status = 'live';
-                }
-
-                document.getElementById('matchGameTitle').textContent = (statusRes.game || {}).title || (statusRes.game || {}).name || 'Игра';
-                renderMatchUI();
-                setupMatchEventListeners();
-            } catch (err) {
-                console.error('Failed to init match mode:', err);
-                document.getElementById('matchGameTitle').textContent = 'Ошибка загрузки';
-            }
-        }
-
-        function getLineupForTeam(teamId) {
-            return matchState.lineups.filter(l => l.team_id === teamId).map(l => {
-                const p = matchState.signups.find(s => s.user_id === l.player_id);
-                const pName = p ? (p.first_name || p.username || (p.user && (p.user.first_name || p.user.username)) || `Игрок ${p.user_id}`) : `Игрок ${l.player_id}`;
-                return { ...l, name: pName };
-            });
-        }
-
-        function renderMatchUI() {
-            const leftTeam = matchState.teams[0] || { id: '', name: 'Команда слева' };
-            const rightTeam = matchState.teams[1] || { id: '', name: 'Команда справа' };
-            document.getElementById('btnTeamNameLeft').textContent = leftTeam.name || 'Команда слева';
-            document.getElementById('btnTeamNameRight').textContent = rightTeam.name || 'Команда справа';
-            document.getElementById('teamLeftLabel').textContent = leftTeam.name || 'Команда слева';
-            document.getElementById('teamRightLabel').textContent = rightTeam.name || 'Команда справа';
-            document.getElementById('scoreLeft').textContent = matchState.scoreLeft;
-            document.getElementById('scoreRight').textContent = matchState.scoreRight;
-            renderPlayersColumn('playersLeft', leftTeam.id);
-            renderPlayersColumn('playersRight', rightTeam.id);
-            renderLog();
-        }
-
-        function renderPlayersColumn(containerId, teamId) {
-            const container = document.getElementById(containerId);
-            container.innerHTML = '';
-            const players = getLineupForTeam(teamId);
-            if (players.length === 0) {
-                container.innerHTML = '<div class="match-empty">Нет игроков</div>';
-                return;
-            }
-            players.forEach(pl => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'match-player-btn';
-                btn.textContent = pl.name;
-                btn.dataset.playerId = pl.player_id;
-                btn.addEventListener('click', () => openActionModal(pl.player_id, pl.name));
-                container.appendChild(btn);
-            });
-        }
-
-        function renderLog() {
-            const container = document.getElementById('matchLogList');
-            container.innerHTML = '<div class="match-empty">Лог действий пуст</div>';
-        }
-
-        function getActionWeight(a) {
-            if (a.weight != null) return a.weight;
-            if (a.action_weight != null) return a.action_weight;
-            if (a.points != null) return a.points;
-            if (a.payload && a.payload.weight != null) return a.payload.weight;
-            return null;
-        }
-
-        function setupMatchEventListeners() {
-            // Back button
-            document.getElementById('matchBackBtn')?.addEventListener('click', () => {
-                setActiveView('signup');
-            });
-
-            // Team name click → open team change modal
-            ['Left', 'Right'].forEach(side => {
-                const btn = document.getElementById(`btnTeamName${side}`);
-                btn?.addEventListener('click', () => {
-                    matchState.activeSide = side;
-                    const select = document.getElementById('teamChangeSelect');
-                    select.innerHTML = '';
-                    matchState.teams.forEach(t => {
-                        const opt = document.createElement('option');
-                        opt.value = t.id;
-                        opt.textContent = t.name || `Команда`;
-                        select.appendChild(opt);
-                    });
-                    openModal('teamChangeModal');
-                });
-            });
-
-            document.getElementById('teamChangeConfirm')?.addEventListener('click', () => {
-                const select = document.getElementById('teamChangeSelect');
-                const newTeamId = select.value;
-                if (!newTeamId || !matchState.activeSide) return;
-
-                // Find or create lineup mapping: we just swap team reference in state
-                const team = matchState.teams.find(t => t.id === newTeamId);
-                if (matchState.activeSide === 'Left') {
-                    matchState.teams[0] = team || matchState.teams[0];
-                } else {
-                    matchState.teams[1] = team || matchState.teams[1];
-                }
-                renderMatchUI();
-                closeModal('teamChangeModal');
-            });
-
-            // Swap (replace) icon next to team name
-            document.getElementById('btnSwapTeamLeft')?.addEventListener('click', () => openReplaceModal('Left'));
-            document.getElementById('btnSwapTeamRight')?.addEventListener('click', () => openReplaceModal('Right'));
-
-            // Undo action
-            document.getElementById('btnUndoAction')?.addEventListener('click', async () => {
-                try {
-                    await apiFetch('/api/match/logs/undo', { method: 'POST' });
-                    renderMatchUI();
-                } catch (err) {
-                    console.error('Undo failed:', err);
-                }
-            });
-
-            // Finish match
-            document.getElementById('btnFinishMatch')?.addEventListener('click', () => {
-                document.getElementById('finishScoreLeft').value = matchState.scoreLeft;
-                document.getElementById('finishScoreRight').value = matchState.scoreRight;
-                openModal('finishMatchModal');
-            });
-
-            document.getElementById('finishConfirm')?.addEventListener('click', async () => {
-                const leftScore = parseInt(document.getElementById('finishScoreLeft').value) || 0;
-                const rightScore = parseInt(document.getElementById('finishScoreRight').value) || 0;
-                const status = document.getElementById('finishStatus').value;
-                try {
-                    await apiFetch(`/api/match/matches/${encodeURIComponent(matchState.matchId)}/score`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({ left_score: leftScore, right_score: rightScore, status })
-                    });
-                    matchState.scoreLeft = leftScore;
-                    matchState.scoreRight = rightScore;
-                    matchState.status = status;
-                    renderMatchUI();
-                    closeModal('finishMatchModal');
-                } catch (err) {
-                    console.error('Finish failed:', err);
-                }
-            });
-        }
-
-        function openReplaceModal(side) {
-            const teamId = side === 'Left' ? matchState.teams[0]?.id : matchState.teams[1]?.id;
-            const players = getLineupForTeam(teamId);
-            const outSelect = document.getElementById('replaceOutSelect');
-            const inSelect = document.getElementById('replaceInSelect');
-            outSelect.innerHTML = '';
-            inSelect.innerHTML = '';
-            players.forEach(pl => {
-                const opt = document.createElement('option');
-                opt.value = pl.player_id;
-                opt.textContent = pl.name;
-                outSelect.appendChild(opt);
-            });
-            const assignedIds = new Set(matchState.lineups.filter(l => l.team_id === teamId).map(l => l.player_id));
-            matchState.signups.forEach(s => {
-                if (!assignedIds.has(s.user_id)) {
-                    const opt = document.createElement('option');
-                    opt.value = s.user_id;
-                    opt.textContent = s.first_name || s.username || `Игрок ${s.user_id}`;
-                    inSelect.appendChild(opt);
-                }
-            });
-            if (inSelect.children.length === 0) {
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = '(нет свободных игроков)';
-                opt.disabled = true;
-                inSelect.appendChild(opt);
-            }
-            matchState.activeSide = side;
-            openModal('replacePlayerModal');
-        }
-
-        document.getElementById('replacePlayerConfirm')?.addEventListener('click', async () => {
-            const outSelect = document.getElementById('replaceOutSelect');
-            const inSelect = document.getElementById('replaceInSelect');
-            const outId = outSelect.value;
-            const inId = inSelect.value;
-            if (!outId || !inId) return;
-            try {
-                const teamId = matchState.activeSide === 'Left' ? matchState.teams[0]?.id : matchState.teams[1]?.id;
-                await apiFetch('/api/match/lineups/replace', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        game_id: matchState.gameId,
-                        old_player_id: outId,
-                        new_player_id: inId,
-                        team_id: teamId
-                    })
-                });
-                const res = await apiFetch(`/api/match/${encodeURIComponent(matchState.gameId)}/state`);
-                matchState.lineups = Array.isArray(res?.lineups) ? res.lineups : [];
-                renderMatchUI();
-                closeModal('replacePlayerModal');
-            } catch (err) {
-                console.error('Replace failed:', err);
-            }
-        });
-
-        function openActionModal(playerId, playerName) {
-            document.getElementById('actionPlayerName').textContent = playerName;
-            const list = document.getElementById('actionList');
-            list.innerHTML = '';
-            matchState.actions.forEach(a => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.style.display = 'block';
-                btn.style.width = '100%';
-                btn.style.textAlign = 'left';
-                btn.style.padding = '8px';
-                btn.style.borderRadius = '6px';
-                btn.style.border = '1px solid rgba(128,128,128,0.16)';
-                btn.style.background = 'var(--tg-theme-bg-color, #fff)';
-                btn.style.color = 'inherit';
-                btn.style.fontSize = '13px';
-                btn.style.cursor = 'pointer';
-                btn.textContent = `${a.title || 'Действие'} (вес: ${getActionWeight(a) != null ? getActionWeight(a) : '-'})`;
-                btn.addEventListener('click', () => {
-                    logAction(playerId, a.action_type || a.title, a.weight);
-                    closeModal('actionModal');
-                });
-                list.appendChild(btn);
-            });
-            openModal('actionModal');
-        }
-
-        async function logAction(playerId, actionType, weight) {
-            try {
-                await apiFetch('/api/match/logs', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        game_id: matchState.gameId,
-                        match_id: matchState.matchId,
-                        action_type: actionType,
-                        actor_id: playerId,
-                        payload: { weight }
-                    })
-                });
-                renderMatchUI();
-            } catch (err) {
-                console.error('Log action failed:', err);
-            }
-        }
-
-        // Score swipe up/down
-        let touchStartY = 0;
-        ['scoreLeft', 'scoreRight'].forEach(id => {
-            const el = document.getElementById(id);
-            el?.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].clientY; });
-            el?.addEventListener('touchend', (e) => {
-                const touchEndY = e.changedTouches[0].clientY;
-                const diff = touchStartY - touchEndY;
-                const isLeft = id === 'scoreLeft';
-                if (Math.abs(diff) > 30) {
-                    const delta = diff > 0 ? 1 : -1;
-                    el.classList.add('swipe-anim');
-                    setTimeout(() => el.classList.remove('swipe-anim'), 300);
-                    updateScore(isLeft, delta);
-                }
-            });
-        });
-
-        async function updateScore(isLeft, delta) {
-            if (isLeft) matchState.scoreLeft = Math.max(0, matchState.scoreLeft + delta);
-            else matchState.scoreRight = Math.max(0, matchState.scoreRight + delta);
-            renderMatchUI();
-            try {
-                await apiFetch(`/api/match/matches/${encodeURIComponent(matchState.matchId)}/score`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ left_score: matchState.scoreLeft, right_score: matchState.scoreRight })
-                });
-            } catch (err) {
-                console.error('Score update failed:', err);
-            }
-        }
-
             window.Telegram?.WebApp?.ready?.();
             window.Telegram?.WebApp?.expand?.();
 
@@ -719,7 +274,8 @@
 
             if (gameId) {
                 setActiveView('match');
-                await initMatchMode(gameId);
+                initMatchControls(setActiveView);
+                await initMatchView(gameId);
                 return;
             }
 
@@ -737,3 +293,19 @@
     </script>
 </body>
 </html>
+
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="finishConfirm">Завершить</button>
+                <button type="button" id="finishCancel" class="btn-secondary">Отмена</button>
+            </div>
+        </div></div>
+    </div>
+
+            </form>
+        </div></div>
+
+                <div class="form-group"><label>Телефон:</label><input type="tel" id="orgPhone" required></div>
+                <button type="submit">Создать анонс</button>
+            </form>
+        </div>
